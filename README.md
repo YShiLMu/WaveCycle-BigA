@@ -1,44 +1,43 @@
-# WaveCycle（观复）
+# 观复（WaveCycle）· 技术分析融合版
 
 > 万物并作，吾以观复。——《道德经》
 
-一个面向 A 股的 Codex Skill：**Elliott 波浪理论为主框架，道氏理论定趋势前提，江恩理论做时间/价位验证**。声明分析级别、数浪、Rule/Guideline 逐条校验、主备方案 + 独立失效价位、七因子概率排序、共振状态标注，输出自包含的分析报告（Markdown + 网页）与交易计划。
+一个面向 A 股的 Codex/ZCode Skill：**以 Elliott Wave（艾略特波浪理论）数浪为主框架，叠加道氏理论（趋势前提）、江恩理论（时间/价位验证）与蜡烛图（K 线信号确认）交叉验证**。声明分析级别、数浪、Rule/Guideline 逐条校验、主备方案 + 独立失效价位、八因子概率排序、共振状态标注，输出自包含的分析报告（Markdown + 网页）与交易计划。
 
-> **与基础版的关系**：`wavecycle` 是 `elliott-wave-biga`（纯 Elliott Wave 基础版）的拓展，两者是**两个独立技能、可并存**——基础版保持纯波浪体系，本技能在其上叠加道氏理论（前提层）与江恩理论（验证层）。本仓库只开发与同步 `wavecycle`，不修改 `elliott-wave-biga`（详见仓库根目录 `分发说明_DISTRIBUTION.md`）。
+## 四层分工
 
-## 为什么做这个
-
-单一的波浪理论数浪主观性强——同一段行情常有多个合法数法。观复的思路是给数浪加两层"外部证据"：
-
-- **道氏理论（前提层）**：管"能不能做"。用高低点结构与指数互证判定趋势状态（牛/熊/震荡），作为数浪的方向先验；
+- **道氏理论（前提层）**：管"能不能做"。用高低点结构与指数互证判定趋势状态（牛市/熊市/震荡），作为数浪的方向先验；
+- **波浪理论（主框架）**：管"做到哪一步"。结构、数浪、级别与失效价位；
 - **江恩理论（验证层）**：管"什么时候到"。角度线、1/8 分割、时间窗只做目标测算与共振加分；
-- **优先级铁律：波浪 Rule > 道氏 > 江恩**。道氏与江恩一律是 Guideline 级证据，永不否决数法、永不覆盖失效价位。
+- **蜡烛图（信号层）**：管"转折是否确认"。K 线信号（反转/持续）做数浪方向与关键位的交叉确认。
 
-三理论共振时出手，背离时观望——这是本 Skill 的核心纪律。
+**优先级铁律：波浪 Rule > 道氏 > 江恩 ≈ 蜡烛图**。道氏、江恩、蜡烛图一律是 Guideline 级证据，永不否决数法、永不覆盖失效价位。
+
+共振时出手、背离时观望——这是本 Skill 的核心纪律。
 
 ## 特性
 
-- **严格的三理论分层**：Elliott Rule 是唯一裁决框架（违反即数法无效），道氏/江恩只参与概率评分
-- **七因子概率排序（G21）**：Guideline 命中数 ×2 + 结构完整度、斐波那契共振、道氏一致性、江恩价格共振、江恩时间共振、失效距离
+- **严格的分层裁决**：Elliott Rule 是唯一裁决框架（违反即数法无效），道氏/江恩/蜡烛图只参与概率评分与仓位约束
+- **八因子概率排序（G21）**：Guideline 命中数 ×2 + 结构完整度 + 斐波那契共振 + 道氏趋势一致性 + 江恩价格共振 + 江恩时间共振 + 蜡烛图信号 + 失效价位距离（权重 2:1:1:1:1:1:1:1）
 - **共振状态标签（G26）与仓位闸门（G27）**：三共振/双共振/单信号/背离四态；双共振（含道氏一致）升一档、三共振再升一档，背离强制观望
 - **江恩时间纪律**：固定时间窗清单（30/60/90/144/180/360 天 + 周年日）+ 预登记制度，"波浪定带、江恩定点"，禁止事后挑窗
 - **A 股指数互证口径**：主板 = 上证指数 + 板块指数；创业板（300）= 创业板指 + 板块指数；科创板（688）= 科创指数 + 板块指数
 - **主备方案机制**：任何分析必须给出主方案 + 至少一个替代方案，各自独立失效价位（精确到具体价位，禁止"附近""左右"）
 - **自包含交付**：分析报告 + 网页报告，浪型图（K 线 + 浪段标注 + 失效价位 + 可选江恩角度线）base64 内嵌
-- **完备的校验体系**：7 份校验清单、92 个检查条目逐条打勾，Rule Check 与 Guideline Check 分离（口径：92 = 7 份清单去重后的带 ID 条目，含自动派生项 G-8/G-9/G-10/G-13/F6-4 与道氏 DO-x / 江恩 GN-x；`build_package.py` 按此口径校验源与打包版一致，92/92）
+- **完备的校验体系**：8 份校验清单、115 个带 ID 检查条目逐条打勾（含道氏 DO-x、江恩 GN-x、蜡烛图 CS-x），Rule Check 与 Guideline Check 分离
 
 ## 前置依赖
 
 分析 A 股需要先安装 [`a-stock-data`](https://github.com/simonlin1212/a-stock-data) skill（用于获取 A 股行情/K 线等真实数据）：
 
-1. 在 Codex 中通过技能安装器安装 `a-stock-data`；或将其放入 `~/.codex/skills/` 后重启 Codex；
+1. 通过技能安装器安装 `a-stock-data`，或将其放入技能目录后重启客户端；
 2. 安装其 Python 依赖：`pip install mootdx requests pandas stockstats`。
 
 分析非 A 股市场（美股、港股、期货、加密货币等）不需要该前置，由用户直接提供数据或图表即可。
 
 ## 安装
 
-方式一：通过 Codex 技能安装器安装本仓库：
+方式一：通过技能安装器安装本仓库：
 
 ```
 https://github.com/YShiLMu/WaveCycle-BigA
@@ -48,43 +47,46 @@ https://github.com/YShiLMu/WaveCycle-BigA
 
 ```bash
 git clone https://github.com/YShiLMu/WaveCycle-BigA.git wavecycle
-cp -r wavecycle ~/.codex/skills/
-# 重启 Codex
+cp -r wavecycle ~/.zcode/skills/    # ZCode 客户端；Codex 客户端放入 ~/.codex/skills/
+# 重启客户端
 ```
 
 ## 用法
 
 ```
-使用 $wavecycle 分析沪深300 日线走势，给出主备数浪、校验结果、失效价位与概率排序。
+使用 $wavecycle 分析沪深300 日线走势，给出主备数浪、校验结果、失效价位、八因子概率排序与共振状态。
 ```
 
 ```
-使用 $wavecycle 分析创业板指周线，要求标注道氏趋势状态与江恩共振区。
+使用 $wavecycle 分析创业板指周线，要求标注道氏趋势状态、江恩共振区与蜡烛图信号。
 ```
 
 ## 输出物
 
 每次分析交付两份文档（归档到 `分析输出/<标的>_<代码>_<时间>/`）：
 
-- **分析报告.md**：8 章节——分析前提（含道氏趋势状态）、主方案、替代方案（各含道氏背景与江恩共振）、概率排序与理由（含三理论共振表）、失效价位清单、交易计划、风险提示、更新与跟踪；
+- **分析报告.md**：8 章节——分析前提（含道氏趋势状态）、主方案、替代方案（各含道氏背景、江恩共振与蜡烛图信号）、八因子概率排序与理由（含共振状态表）、失效价位清单、交易计划、风险提示、更新与跟踪；
 - **网页报告.html**：同一内容的快捷查看版，主备方案图标签页切换，图片自包含。
 
 ## 项目结构
 
 ```
 ├── SKILL.md                  # 技能入口与核心流程
+├── agents/openai.yaml        # Agent 配置
 ├── references/
 │   ├── rules.md              # Elliott 硬性规则（R 系列，唯一裁决权威）
-│   ├── guidelines.md         # 指导原则（G 系列，含 G21 七因子/G26 共振标签/G27 仓位闸门）
+│   ├── guidelines.md         # 指导原则（G 系列，含 G21 八因子/G26 共振标签/G27 仓位闸门）
 │   ├── dow.md                # 道氏理论（DO 信号、指数互证口径、趋势判定流程）
 │   ├── gann.md               # 江恩理论（GN 信号、角度线、时间窗、共振判定）
-│   ├── checklists.md         # 7 份校验清单（92 条目，含道氏 DO-x / 江恩 GN-x）
+│   ├── candlestick.md        # 蜡烛图（CS 信号：反转/持续分类、关键位确认）
+│   ├── checklists.md         # 8 份校验清单（115 条目，含 DO-x / GN-x / CS-x）
 │   ├── workflow.md           # 5 步工作流
 │   ├── fibonacci.md          # 斐波那契比率与时间比率
-│   ├── patterns.md / terminology.md / defaults.md / data.md / rule_conflicts.md
-├── assets/                   # 报告与网页模板、工作底稿
+│   └── patterns.md / terminology.md / defaults.md / data.md / rule_conflicts.md
+├── assets/                   # 报告与网页模板
 └── scripts/
     ├── ew_chart.py           # K 线 + 浪型标注绘图（--gann 叠加江恩角度线）
+    ├── key_levels.py         # 关键结构位（压力/支撑）检测
     └── embed_report_images.py # 图片 base64 内嵌
 ```
 
@@ -98,9 +100,9 @@ cp -r wavecycle ~/.codex/skills/
 
 ## 致谢
 
-**[`a-stock-data`](https://github.com/simonlin1212/a-stock-data)** —— 作者 Simon 林（[@linsizhen](https://x.com/linsizhen)）。A 股行情、资金面、新闻、公告等数据能力来自这个开源项目，是本技能 A 股分析的数据基石。感谢 Simon 林把 `a-stock-data` 开源出来，A 股的数据获取基本靠它，真的省了不少事。
+[`a-stock-data`](https://github.com/simonlin1212/a-stock-data) —— 作者 Simon 林（[@linsizhen](https://x.com/linsizhen)）。A 股行情、资金面、新闻、公告等数据能力来自这个开源项目，是本技能 A 股分析的数据基石。感谢 Simon 林把 `a-stock-data` 开源出来，A 股的数据获取基本靠它，真的省了不少事。
 
-理论框架：Frost & Prechter《Elliott Wave Principle: Key to Market Behavior》（第 10 版，2005，Wiley）；道氏理论（Dow/Hamilton/Rhea 体系）；江恩理论（W.D. Gann 体系）。
+理论框架：Frost & Prechter《Elliott Wave Principle: Key to Market Behavior》（第 10 版，2005，Wiley）；道氏理论（Dow/Hamilton/Rhea 体系）；江恩理论（W.D. Gann 体系）；蜡烛图（Steve Nison《日本蜡烛图技术》）。
 
 ## 免责声明
 
