@@ -5,12 +5,21 @@
 用法（命令行）：
     python ew_chart.py --csv data.csv --out 主方案_第4浪平台形.png ^
         --title "日线级别 · Intermediate · 主方案：第 4 浪平台形（Flat）" ^
-        --waves "1:start,end:Impulse" "2:start,end:Correction" ...
+        --waves "1:start,end:Impulse" "2:start,end:Correction:down" ^
+        --invalid "160:跌破 160（第 1 浪高点，R7）即失效" ^
+        --gann "10:1328:up" --gann-auto-scale
 
-CSV 列：date,open,high,low,close（date 形如 2026-08-08）。
-浪段参数格式：<标注>:<起始索引>:<结束索引>:<形态备注>，索引为 CSV 行号（0 起）。
+CSV 列：date,open,high,low,close[,volume]（date 形如 2026-08-08；读取时强制校验
+OHLC 合理性：high ≥ low ≥ 0、open/close 落在 [low, high]、日期升序无重复，坏数据报错）。
+浪段参数格式：<标注>:<起始索引>:<结束索引>:<形态备注>[:方向up/down/auto]，索引为 CSV 行号（0 起）；
+方向默认 auto = 按端点极端价位判定（终点高/低均高于起点 → 上行，均低 → 下行，
+区间重叠时回退收盘价比较，与 R20 极端价位口径一致），显式 up/down 可覆盖。
 失效价位参数格式：<价格>:<标签>，如 "160:跌破 160（第 1 浪高点，R7）即失效"。
-本脚本只依赖 matplotlib；mplfinance 可用时优先用于 K 线主体。
+江恩扇形：--gann "起点索引:起点价格:刻度[:方向]"；加 --gann-auto-scale 时省略刻度
+（格式 "起点索引:起点价格[:方向]"），按项目默认口径 D23 自动分档，--gann-index 表示
+指数点位（固定刻度 50）。
+本脚本只依赖 matplotlib；K 线主体统一使用原生 matplotlib 蜡烛图实现，
+不依赖 mplfinance（其 ax 模式会重置坐标、覆盖浪型标注，已弃用）。
 """
 
 import argparse
@@ -24,13 +33,6 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
 import pandas as pd
-
-try:
-    import mplfinance as mpf
-
-    HAS_MPF = True
-except Exception:  # pragma: no cover
-    HAS_MPF = False
 
 # 中文字体：优先微软雅黑/黑体，避免 DejaVu 缺字形（中文标注变方块）
 from matplotlib import font_manager
@@ -50,6 +52,38 @@ else:  # pragma: no cover
     print("[警告] 未找到中文字体，中文标注可能显示为方块", file=sys.stderr)
 
 
+def _validate_ohlc(df):
+    """数据自检（workflow 第 1 步 1.5 口径）：high ≥ low ≥ 0、open/close 落在
+    [low, high]、volume ≥ 0（如有）、日期升序无重复。坏数据直接报错（行号按 CSV）。"""
+
+    def rows(mask):
+        return [int(i) + 2 for i in df.index[mask][:10]]
+
+    h = df["high"].astype(float)
+    l = df["low"].astype(float)
+    o = df["open"].astype(float)
+    c = df["close"].astype(float)
+    if (h < l).any():
+        raise ValueError("数据自检失败：high < low 的行号 %s" % rows(h < l))
+    if (l < 0).any():
+        raise ValueError("数据自检失败：low < 0 的行号 %s" % rows(l < 0))
+    oob_o = (o < l - 1e-9) | (o > h + 1e-9)
+    if oob_o.any():
+        raise ValueError("数据自检失败：open 超出 [low, high] 的行号 %s" % rows(oob_o))
+    oob_c = (c < l - 1e-9) | (c > h + 1e-9)
+    if oob_c.any():
+        raise ValueError("数据自检失败：close 超出 [low, high] 的行号 %s" % rows(oob_c))
+    if "volume" in df.columns:
+        v = df["volume"].astype(float)
+        if (v < 0).any():
+            raise ValueError("数据自检失败：volume < 0 的行号 %s" % rows(v < 0))
+    dup = df["date"].duplicated()
+    if dup.any():
+        raise ValueError("数据自检失败：日期重复：%s" % sorted(df.loc[dup, "date"].astype(str).head(5)))
+    if not df["date"].is_monotonic_increasing:
+        raise ValueError("数据自检失败：日期未按升序排列")
+
+
 def load_ohlc(csv_path):
     """读取 CSV，返回带 datetime 索引的 DataFrame。"""
     df = pd.read_csv(csv_path)
@@ -58,6 +92,7 @@ def load_ohlc(csv_path):
     if missing:
         raise ValueError(f"CSV 缺少列: {sorted(missing)}")
     df["date"] = pd.to_datetime(df["date"])
+    _validate_ohlc(df)
     df = df.set_index("date").sort_index()
     return df
 
@@ -98,7 +133,8 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
                gann_fans=None):
     """绘制单方案 K 线图并保存 PNG。
 
-    waves: [(label, start_idx, end_idx, form_note), ...]
+    waves: [(label, start_idx, end_idx, form_note, direction), ...]
+        # direction: "up"/"down"/"auto"（auto 按端点极端价位判定，见 _wave 判向逻辑）
     invalids: [(price, label), ...]
     fib_zones: [(lo, hi, label), ...]
     levels: [(price, label), ...]  # 关键阻力/支撑（蓝色虚线，非失效）
@@ -122,15 +158,26 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
     ax.grid(True, linestyle="--", alpha=0.4)
 
     # 1) 浪段标注：连线 + 标签 + 形态备注（带引线，避免遮挡）
-    for label, s0, e0, note in waves:
+    for label, s0, e0, note, direction in waves:
         s = s0 - base
         e = e0 - base
         if s < 0 or e < 0 or s >= len(plot_df) or e >= len(plot_df):
             print(f"[警告] 浪段 {label} 索引越界，跳过", file=sys.stderr)
             continue
         xs, xe = s, e
-        # 以收盘价方向判定涨跌，锚定极端价位：上行浪 low(start)->high(end)，下行浪 high(start)->low(end)
-        up = plot_df.iloc[e]["close"] >= plot_df.iloc[s]["close"]
+        # 方向判定（R20 极端价位口径）：显式 up/down 优先；auto 按端点极端价位——
+        # 终点高/低均高于起点 → 上行、均低于起点 → 下行、区间重叠时回退收盘价比较
+        if direction == "auto":
+            he, le = plot_df.iloc[e]["high"], plot_df.iloc[e]["low"]
+            hs, ls = plot_df.iloc[s]["high"], plot_df.iloc[s]["low"]
+            if he > hs and le > ls:
+                up = True
+            elif he < hs and le < ls:
+                up = False
+            else:
+                up = plot_df.iloc[e]["close"] >= plot_df.iloc[s]["close"]
+        else:
+            up = direction == "up"
         ys = plot_df.iloc[s]["low"] if up else plot_df.iloc[s]["high"]
         ye = plot_df.iloc[e]["high"] if up else plot_df.iloc[e]["low"]
         ax.annotate(
@@ -206,8 +253,10 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
             ax.text(x_end, y_end, " 江恩" + label, color="#00897b",
                     fontsize=10 * fs, va="bottom", ha="right", zorder=7)
 
-    # 3) 图例：右下角注明方案名
+    # 3) 图例：右下角注明方案名（含江恩刻度披露）
     scheme = title.split("·")[-1].strip() if "·" in title else title
+    if gann_fans:
+        scheme += "｜江恩刻度 %.4g（D23 分档）" % gann_fans[0][2]
     ax.text(0.985, 0.02, scheme, transform=ax.transAxes, fontsize=13 * fs,
             ha="right", va="bottom", bbox=dict(boxstyle="round", fc="white",
                                                ec="#999999", alpha=0.9))
@@ -225,11 +274,15 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
 
 
 def parse_wave_arg(s):
-    """解析 '标签:起点:终点:备注'。"""
-    parts = s.split(":", 3)
-    if len(parts) != 4:
-        raise argparse.ArgumentTypeError(f"浪段格式应为 标签:起点:终点:备注，收到: {s}")
-    return (parts[0], int(parts[1]), int(parts[2]), parts[3])
+    """解析 '标签:起点:终点:备注[:方向]'。方向 up/down/auto（默认 auto）。"""
+    parts = s.split(":", 4)
+    if len(parts) not in (4, 5):
+        raise argparse.ArgumentTypeError(
+            f"浪段格式应为 标签:起点:终点:备注[:方向up/down/auto]，收到: {s}")
+    direction = parts[4] if len(parts) == 5 else "auto"
+    if direction not in ("up", "down", "auto"):
+        raise argparse.ArgumentTypeError(f"浪段方向只支持 up/down/auto，收到: {direction}")
+    return (parts[0], int(parts[1]), int(parts[2]), parts[3], direction)
 
 
 def parse_price_arg(s):
@@ -248,12 +301,35 @@ def parse_fib_arg(s):
     return (float(parts[0]), float(parts[1]), parts[2])
 
 
-def parse_gann_arg(s):
-    """解析 '起点索引:起点价格:刻度[:方向(up|down)]'。"""
+def gann_auto_scale(price, is_index=False):
+    """D23 自动分档：指数点位固定 50；价格 <10→0.05、10–100→0.5、
+    100–1000→5、≥1000→50（单位价格/根 K 线，目标使 1×1 线视觉接近 45°）。"""
+    if is_index:
+        return 50.0
+    if price < 10:
+        return 0.05
+    if price < 100:
+        return 0.5
+    if price < 1000:
+        return 5.0
+    return 50.0
+
+
+def parse_gann_arg(s, auto=False):
+    """解析江恩扇形参数。auto 模式（--gann-auto-scale）：'起点索引:起点价格[:方向]'，
+    刻度按 D23 自动分档；手动模式：'起点索引:起点价格:刻度[:方向]'。"""
     parts = s.split(":")
+    if auto:
+        if len(parts) not in (2, 3):
+            raise argparse.ArgumentTypeError(
+                f"江恩参数（--gann-auto-scale 模式）应为 起点索引:起点价格[:方向]，收到: {s}")
+        direction = parts[2] if len(parts) == 3 else "up"
+        if direction not in ("up", "down"):
+            raise argparse.ArgumentTypeError(f"江恩方向只支持 up/down，收到: {direction}")
+        return (int(parts[0]), float(parts[1]), None, direction)
     if len(parts) not in (3, 4):
         raise argparse.ArgumentTypeError(
-            f"江恩角度线格式应为 起点索引:起点价格:刻度[:方向]，收到: {s}")
+            f"江恩参数应为 起点索引:起点价格:刻度[:方向]，收到: {s}")
     direction = parts[3] if len(parts) == 4 else "up"
     if direction not in ("up", "down"):
         raise argparse.ArgumentTypeError(f"江恩方向只支持 up/down，收到: {direction}")
@@ -266,7 +342,9 @@ def main():
     p.add_argument("--out", required=True, help="输出 PNG 路径")
     p.add_argument("--title", required=True, help="图标题（含分析级别与方案名）")
     p.add_argument("--waves", nargs="*", type=parse_wave_arg, default=[],
-                   help="浪段标注：标签:起点:终点:形态备注")
+                   help="浪段标注：标签:起点:终点:备注[:方向up/down/auto]；"
+                        "方向默认 auto=按端点极端价位判定（终点高/低均高于起点→上行，"
+                        "均低→下行，区间重叠回退收盘比较，R20 口径）")
     p.add_argument("--invalid", nargs="*", type=parse_price_arg, default=[],
                    help="失效价位：价格:标签（含规则编号）")
     p.add_argument("--level", nargs="*", type=parse_price_arg, default=[],
@@ -275,18 +353,42 @@ def main():
     p.add_argument("--fib", nargs="*", type=parse_fib_arg, default=[],
                    help="斐波那契目标区：低:高:标签")
     p.add_argument("--last", type=int, default=None, help="只绘制最近 N 根 K 线")
-    p.add_argument("--gann", nargs="*", type=parse_gann_arg, default=[],
-                   help="江恩角度线扇形（可选叠加）：起点索引:起点价格:刻度[:方向up/down]；"
+    p.add_argument("--gann", nargs="*", default=[], metavar="FAN",
+                   help="江恩角度线扇形（可选叠加）：起点索引:起点价格[:刻度][:方向up/down]；"
                         "刻度 = 每根 K 线 1 单位价格（分档见项目默认口径 D23），须披露")
+    p.add_argument("--gann-auto-scale", action="store_true",
+                   help="江恩刻度自动分档（D23）：--gann 省略刻度，按锚点价格量级取 "
+                        "0.05/0.5/5/50，图例与输出披露刻度值；同一分析内禁止换刻度")
+    p.add_argument("--gann-index", action="store_true",
+                   help="标的为指数点位：--gann-auto-scale 时分档固定取 50（D23）")
     p.add_argument("--font-scale", type=float, default=1.0,
                    help="字号缩放（放大图建议 1.2–1.4）")
     args = p.parse_args()
 
     df = load_ohlc(args.csv)
+
+    # 江恩扇形：auto 模式统一按第一个锚点价格分档（D23 同一分析内禁止换刻度）
+    gann_fans = []
+    if args.gann:
+        raw_fans = [parse_gann_arg(s, auto=args.gann_auto_scale) for s in args.gann]
+        if args.gann_auto_scale:
+            scale = gann_auto_scale(raw_fans[0][1], args.gann_index)
+            for idx, price, _sc, direction in raw_fans:
+                if gann_auto_scale(price, args.gann_index) != scale:
+                    print("[警告] 江恩锚点价格 %s 与首个锚点分档不同，已统一用刻度 %s（D23 同一分析内禁止换刻度）"
+                          % (_fmt_price(price), _fmt_price(scale)), file=sys.stderr)
+                gann_fans.append((idx, price, scale, direction))
+            print("[江恩] 自动刻度 %s/根（D23 分档：锚点价格 %s%s）"
+                  % (_fmt_price(scale), _fmt_price(raw_fans[0][1]),
+                     "，指数点位固定 50" if args.gann_index else ""))
+        else:
+            gann_fans = [(idx, price, scale, direction)
+                         for idx, price, scale, direction in raw_fans]
+
     draw_chart(df, args.out, args.title, args.waves, args.invalid,
                current_price=args.current, fib_zones=args.fib, last_n=args.last,
                levels=args.level, font_scale=args.font_scale,
-               gann_fans=args.gann)
+               gann_fans=gann_fans)
 
 
 if __name__ == "__main__":

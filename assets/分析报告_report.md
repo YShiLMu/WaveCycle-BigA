@@ -67,7 +67,7 @@
   - 示例：![替代方案全景图](C:/绝对路径/替代方案_全景.png)
   - 示例：![替代方案放大图](C:/绝对路径/替代方案_放大.png)
 
-> 图表数量 = 候选方案数 × 2（每方案全景 + 放大；出现第 3 个备选方案时，其两张图必须在【7. 风险提示】说明原因）。每张图只画一个方案，禁止主备混叠（references/rules.md R23）。PNG 仅用于嵌入本报告与网页，不单独交付；图片保存后必须验证存在且可渲染（references/workflow.md 第 4 步第 2.1 节自检清单）。
+> 交付图表默认 4 张（主方案/替代方案 × 全景 + 放大）；极端情况仅 1 个合法方案时防御性 2 张（主方案全景 + 放大，替代方案图区标记不适用）；出现第 3 个备选方案时只文字呈现、不出图，原因在【7. 风险提示】说明（references/workflow.md 第 4 步第 2.1 节）。每张图只画一个方案，禁止主备混叠（references/rules.md R23）。PNG 仅用于嵌入本报告与网页，不单独交付；图片保存后必须验证存在且可渲染（references/workflow.md 第 4 步第 2.1 节自检清单）。
 
 ### 2.4 【4. 概率排序与理由】
 
@@ -162,8 +162,8 @@
 - [ ] 【4 概率排序与理由】含八因子评分、三理论共振表与共振状态标签（references/guidelines.md G21、G26）；仓位闸门结论已写入【6 交易计划建议】（references/guidelines.md G27）；
 - [ ] 8 章节与 references/workflow.md 第 5 步第 8 节（变更日志与交接）一致；
 - [ ] 输出顺序为"简明分析 → 浪型图 → 简洁总结"，总结放在所有内容最后且 ≤15 行（references/workflow.md 第 4 步第 2.2 节）；
-- [ ] 浪型图数量 = 候选方案数 × 2（每方案全景 + 放大，references/workflow.md 第 4 步第 2.1 节）；每图只画一个方案（references/rules.md R23）、标题含分析级别（references/rules.md R22）、失效价位带规则编号（references/rules.md R19、R20）。
-- [ ] 图片自包含：md/html 各含 4 个图片标记（base64 data URI，或回退绝对路径），由 scripts/embed_report_images.py 校验通过。
+- [ ] 浪型图数量 = 4 张（主/替代 × 全景 + 放大；极端情况单方案防御 2 张，references/workflow.md 第 4 步第 2.1 节）；每图只画一个方案（references/rules.md R23）、标题含分析级别（references/rules.md R22）、失效价位带规则编号（references/rules.md R19、R20）。
+- [ ] 图片自包含：md/html 各含与图表张数一致（默认 4 张，单方案防御 2 张）的图片标记（base64 data URI，或回退绝对路径），由 scripts/embed_report_images.py 校验通过。
 
 ## 7. 实战示例：完整模板填写（示例值）
 
