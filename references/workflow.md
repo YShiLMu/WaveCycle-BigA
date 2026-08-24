@@ -616,7 +616,7 @@
 | G5–G8 | 比率目标计算是否使用正确基准浪；是否按极端价位计算（references/rules.md R20；references/fibonacci.md 第 2 节） |
 | G9 | 一个推动浪是否被错误地数出两个延长浪 |
 | G15 | 三角形后的推进距离估算是否使用最宽处距离 |
-| 道氏/江恩/蜡烛图交叉验证 | 02 的道氏一致性（DO-1–DO-10）、江恩共振（GN-1–GN-8）与蜡烛图信号（CS-1–CS-8）评分是否与三份清单结论一致；清单"违反"项（过程违规）是否已披露与处理 |
+| 道氏/江恩/蜡烛图交叉验证 | 02 的道氏一致性（DO-1–DO-10）、江恩共振（GN-1–GN-8）与蜡烛图信号（CS-1–CS-15）评分是否与三份清单结论一致；清单"违反"项（过程违规）是否已披露与处理 |
 
 #### 4.3 复核输出格式
 
@@ -626,7 +626,7 @@
 
 #### 4.4 蜡烛图信号核对（Candlestick Signal Check）
 
-与道氏、江恩验证并列，数浪完成后用蜡烛图形态核对转折/持续信号，结果写入八因子评分的「蜡烛图信号」因子（references/guidelines.md G21；权重见 references/defaults.md D25）。执行 `references/checklists.md（蜡烛图）`（CS-1–CS-9）：
+与道氏、江恩验证并列，数浪完成后用蜡烛图形态核对转折/持续信号，结果写入八因子评分的「蜡烛图信号」因子（references/guidelines.md G21；权重见 references/defaults.md D25）。执行 `references/checklists.md（蜡烛图）`（CS-1–CS-15）：
 
 | 检查项 | 判定标准 | 结论 | 备注 |
 | --- | --- | --- | --- |
@@ -634,6 +634,7 @@
 | 与波浪位置配合 | 转折信号落在第 5 浪/C 浪末端、突破缺口/岛形反转落在推动起点、持续形态（三法/跳空二法/持续缺口）落在第 3 浪加速段、缺口分类正确（CS-4–CS-7；references/candlestick.md第 4–5 节） | | |
 | 方向一致性 | 蜡烛图信号方向与数浪方向一致 → 计分；矛盾 → 披露并在蜡烛图信号因子计 0 分，不改数法（CS-8；references/candlestick.md第 5 节） | | |
 | 评分口径 | 明确信号 2 / 弱信号 1 / 无或矛盾 0，写入八因子评分的蜡烛图信号因子（CS-9；references/candlestick.md第 6 节） | | |
+| 执行触发核对 | 执行信号满足三闸门（方向/验证/落位）、形态止损合规、假突破收盘确认（CS-10–CS-15；references/candlestick.md第 7 节） | | |
 
 核对结论（蜡烛图信号因子得分 + 依据）随验证移交单进入 04 生成报告的概率排序章节；蜡烛图信号只确认、不裁决，永不否决数法、永不覆盖失效价位（`references/rule_conflicts.md`）。
 
@@ -881,7 +882,7 @@
 | ≤1 分 | 观望，等待结构清晰 |
 
 - **仓位闸门（references/guidelines.md G27）**：上表三档得出基础档位后，共振状态标签（references/guidelines.md G26）作附加约束——三共振允许再升一档（相对双共振，累计最多升两档）；双共振（含道氏一致）允许升一档；双共振（不含道氏一致）不干预；单信号封顶"轻仓试探"；背离强制观望（不论得分差多大）。闸门结果与触发理由必须写入【6. 交易计划】。
-- **执行分工**：入场等道氏确认（references/dow.md DO5/结构信号），止损放波浪失效价位（references/rules.md 第 6 节（规则失效价位）），止盈看江恩/斐波那契共振区（references/gann.md第 3 节）。
+- **执行分工**：入场等道氏确认（references/dow.md DO5/结构信号）+ 蜡烛图触发（三闸门：方向/验证/落位，references/candlestick.md第 7 节）、止损放波浪失效价位（references/rules.md 第 6 节（规则失效价位）；形态止损更紧时前置，references/candlestick.md第 7.3 节）、止盈看江恩/斐波那契共振区（references/gann.md第 3 节）+ 蜡烛图衰竭信号（references/candlestick.md第 7 节）。
 - 失效价位距离评估：失效价位越远，仓位可越重；失效价位很近时，即使主方案概率高，也应控制仓位（references/guidelines.md G21"失效价位距离"因子）。
 - 止损位以失效价位为参考，按极端价位（含影线）设置（references/rules.md R20）。
 

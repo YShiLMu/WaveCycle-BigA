@@ -11,6 +11,7 @@
 ## 1. 裁决总原则
 
 - **优先级铁律：波浪 Rule > 道氏 > 江恩 ≈ 蜡烛图**。波浪规则是唯一有"硬性失效"逻辑的体系；道氏（references/dow.md）提供概率性方向先验；江恩（references/gann.md）灵活度最高、最易事后解释，只作验证层证据；蜡烛图（references/candlestick.md）提供 K 线转折/持续信号确认，与江恩同档、只作信号层证据。道氏、江恩与蜡烛图信号一律为 Guideline 级，永不否决数法、永不覆盖失效价位。
+- **执行层信号不进入裁决**：蜡烛图执行规则（references/candlestick.md第 7 节：买点/卖点/形态止损/假突破/极性转换/背离佐证）只作用于交易执行时机与止损位，不参与本裁决流程、不改变任何数法与失效价位；其方向闸门与主要趋势一致性由 `references/checklists.md（蜡烛图）`（CS-10–CS-15）校验。
 - **Rule 优先于 Guideline**：任一 Rule 违反即数法无效（references/rules.md R19）；Guideline 违反只降低概率，并在输出中说明理由（references/guidelines.md 前言）。Guideline 不得豁免 Rule——references/guidelines.md G20 只说明级别错标的概率影响，不豁免 references/rules.md R4 的嵌套自洽判定。
 - **例外条款先验证条件、后适用例外**：例外条款必须先验证其适用条件，满足才可豁免基础规则。典型如重叠例外 references/rules.md R8–R11：先查楔形位置（references/rules.md R9/R10）与子浪结构，并按极端价位（references/rules.md R20）判定，全部满足才豁免 references/rules.md R7；条件不满足仍按 references/rules.md R7 判违反（references/rules.md R11）。
 - **本文只写裁决方式**：条文与判定标准以 references/rules.md、references/guidelines.md 为唯一权威；本文不新增、不改写任何 Rule/Guideline，也不重复展开条文内容。
