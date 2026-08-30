@@ -28,12 +28,17 @@
 
 ## 前置依赖
 
-分析 A 股需要先安装 [`a-stock-data`](https://github.com/simonlin1212/a-stock-data) skill（用于获取 A 股行情/K 线等真实数据）：
+**Python 环境**：本技能的分析脚本（`scripts/` 下的锚点检测、绘图、校验等）需要 **Python 3.9+**：
+
+- 未安装 Python 时从官网下载：https://www.python.org/downloads/ （Windows 安装时勾选 "Add Python to PATH"）
+- 脚本依赖两个第三方库：`pip install pandas matplotlib`（若已按下方 A 股前置装过 pandas，补装 matplotlib 即可）
+
+**A 股数据**：分析 A 股需要先安装 [`a-stock-data`](https://github.com/simonlin1212/a-stock-data) skill（用于获取 A 股行情/K 线等真实数据）：
 
 1. 通过技能安装器安装 `a-stock-data`，或将其放入技能目录后重启客户端；
 2. 安装其 Python 依赖：`pip install mootdx requests pandas stockstats`。
 
-分析非 A 股市场（美股、港股、期货、加密货币等）不需要该前置，由用户直接提供数据或图表即可。
+分析非 A 股市场（美股、港股、期货、加密货币等）不需要 a-stock-data 前置，由用户直接提供数据或图表即可（上方 Python 环境与脚本依赖仍需安装）。
 
 ## 安装
 
