@@ -18,7 +18,15 @@ volume ≥ 0（如有）、日期升序无重复（workflow 第 1 步 1.5 口径
 用法：
     python key_levels.py --csv data.csv [--shadow-ratio 2.0]
                          [--trend-threshold 0.05] [--window 0] [--swing-k 3]
-                         [--cluster-tolerance 0.001]
+                         [--cluster-tolerance 0.001] [--recent 250] [--gap-band 0.15]
+
+输出过滤（默认开启；被过滤的数量均在输出中披露一行，禁止静默丢弃，
+需要全量考古时把参数设为 0 即可取回）：
+    --recent N     前高/前低只输出"最近触及落在最近 N 根以内"的簇（默认 250，
+                   0 = 不过滤）；远期簇对当前数浪无锚定意义，按最近触及是否
+                   仍生效判定相关性
+    --gap-band P   跳空缺口只输出"区间中点距最新收盘 ±P 以内"的缺口（默认
+                   0.15，0 = 不过滤）；远价缺口对当前数浪无锚定意义
 
 CSV 列：date,open,high,low,close[,volume]（date 兼容 YYYY-MM-DD 与 YYYYMMDD 两种格式）。
 """
@@ -261,26 +269,49 @@ def main(argv=None):
                     help="摆动点分形窗口（默认 3）")
     ap.add_argument("--cluster-tolerance", type=float, default=0.001,
                     help="近邻价位聚类容差（相对值，默认 0.001 = ±0.1%%，同簇只保留方向最极端值）")
+    ap.add_argument("--recent", type=int, default=250,
+                    help="前高/前低过滤：只输出最近触及落在最近 N 根以内的簇（默认 250，0 = 不过滤输出全量）")
+    ap.add_argument("--gap-band", type=float, default=0.15,
+                    help="跳空缺口过滤：只输出区间中点距最新收盘 ±该比例以内的缺口（默认 0.15，0 = 不过滤输出全量）")
     args = ap.parse_args(argv)
 
     df = load_ohlc(args.csv)
+    last_close = float(df["close"].iloc[-1])
 
     print("== 1. 前高/前低（D27 第 2 类：被 ≥2 次触及的历史极值，相邻触及间隔 ≥3 根，"
           "聚类容差 ±%.1f%%）==" % (args.cluster_tolerance * 100))
     swing_levels = detect_swing_levels(df, args.swing_k, args.cluster_tolerance)
+    swing_dropped = 0
+    if args.recent > 0 and swing_levels:
+        cutoff = df["date"].iloc[-min(args.recent, len(df))]
+        kept = [lv for lv in swing_levels if lv["last"] >= cutoff]
+        swing_dropped = len(swing_levels) - len(kept)
+        swing_levels = kept
     if not swing_levels:
         print("  （无）")
     for lv in swing_levels:
         print("  %s %.3f —— 触及 %d 次（首次 %s，最近 %s）"
               % (lv["direction"], lv["center"], lv["touches"],
                  _fmt(lv["first"]), _fmt(lv["last"])))
+    if swing_dropped:
+        print("  （--recent %d：已省略 %d 条最近触及在最近 %d 根以前的簇；传 --recent 0 查看全量）"
+              % (args.recent, swing_dropped, args.recent))
 
     print("\n== 2. 跳空缺口 ==")
     gaps = detect_gaps(df)
+    gap_dropped = 0
+    if args.gap_band > 0 and gaps:
+        kept = [g for g in gaps
+                if abs((g[2] + g[3]) / 2.0 - last_close) <= args.gap_band * last_close]
+        gap_dropped = len(gaps) - len(kept)
+        gaps = kept
     if not gaps:
         print("  （无）")
     for d, t, lo, hi in gaps:
         print("  %s %s %.2f–%.2f" % (_fmt(d), t, lo, hi))
+    if gap_dropped:
+        print("  （--gap-band %.2f：已省略 %d 条距最新收盘 ±%.0f%% 以外的缺口；传 --gap-band 0 查看全量）"
+              % (args.gap_band, gap_dropped, args.gap_band * 100))
 
     closes = df["close"].astype(float).values
     window, trend = adaptive_window(closes, args.trend_threshold)
