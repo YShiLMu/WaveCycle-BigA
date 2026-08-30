@@ -26,19 +26,7 @@ import pathlib
 import re
 import sys
 
-IMAGE_KEYS = [
-    ("主方案全景", "主方案_全景.png"),
-    ("主方案放大", "主方案_放大.png"),
-    ("替代方案全景", "替代方案_全景.png"),
-    ("替代方案放大", "替代方案_放大.png"),
-]
-
-HTML_TOKENS = {
-    "主方案全景": "{{主方案全景图路径}}",
-    "主方案放大": "{{主方案放大图路径}}",
-    "替代方案全景": "{{替代方案全景图路径}}",
-    "替代方案放大": "{{替代方案放大图路径}}",
-}
+from naming import HTML_TOKENS, IMAGE_KEYS
 
 
 def data_uri(png_path: pathlib.Path) -> str:

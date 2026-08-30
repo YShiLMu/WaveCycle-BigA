@@ -160,9 +160,15 @@ def run_checks(df, fq, source):
         facts["span_days"] = int((dates.iloc[-1] - dates.iloc[0]).days)
         facts["last_bar"] = dates.iloc[-1].strftime("%Y-%m-%d")
         facts["today"] = datetime.date.today().isoformat()
-        facts["extremes"] = {"high": (float(h.max()), dates.iloc[h.values.argmax()].strftime("%Y-%m-%d")),
-                             "low": (float(l.min()), dates.iloc[l.values.argmin()].strftime("%Y-%m-%d"))}
-        facts["last_close"] = float(c.iloc[-1])
+        # 极值用 pandas idxmax/idxmin（默认 skipna），全 NaN 时记 None，
+        # 防止 np.argmax 命中 NaN 位置导致输出 "nan" 假事实
+        facts["extremes"] = {
+            "high": (float(h.max()), dates.iloc[int(h.idxmax())].strftime("%Y-%m-%d"))
+                    if h.notna().any() else None,
+            "low": (float(l.min()), dates.iloc[int(l.idxmin())].strftime("%Y-%m-%d"))
+                   if l.notna().any() else None,
+        }
+        facts["last_close"] = float(c.iloc[-1]) if pd.notna(c.iloc[-1]) else None
     return rows, facts
 
 
@@ -193,15 +199,21 @@ def main(argv=None):
 
     print("\n## 数据基准（四要素）\n")
     if facts:
-        hi, hi_d = facts["extremes"]["high"]
-        lo, lo_d = facts["extremes"]["low"]
+        hi, hi_d = facts["extremes"]["high"] or (None, None)
+        lo, lo_d = facts["extremes"]["low"] or (None, None)
         print("1. 数据时间范围：%s 至 %s（%d 根，跨度 %d 天）"
               % (facts["date_range"][0], facts["date_range"][1], facts["n_bars"], facts["span_days"]))
-        print("2. 区间极端价位（R20 极端价位口径）：最高 %.3f（%s）、最低 %.3f（%s）"
-              % (hi, hi_d, lo, lo_d))
-        print("3. 当前价格位置：最新收盘 %.3f（区间分位 %.1f%%）"
-              % (facts["last_close"],
-                 100 * (facts["last_close"] - lo) / (hi - lo) if hi > lo else 0.0))
+        if hi is not None and lo is not None:
+            print("2. 区间极端价位（R20 极端价位口径）：最高 %.3f（%s）、最低 %.3f（%s）"
+                  % (hi, hi_d, lo, lo_d))
+        else:
+            print("2. 区间极端价位：OHLC 存在缺失，无可靠极值可披露（见自检表不通过项）")
+        if facts["last_close"] is not None and hi is not None and lo is not None:
+            print("3. 当前价格位置：最新收盘 %.3f（区间分位 %.1f%%）"
+                  % (facts["last_close"],
+                     100 * (facts["last_close"] - lo) / (hi - lo) if hi > lo else 0.0))
+        else:
+            print("3. 当前价格位置：极值或最新收盘缺失，分位不可算（见自检表不通过项）")
         print("4. 复权方式 %s、数据源 %s、最新 bar %s（今天 %s，%s）"
               % (args.fq or "未标注", args.source or "未标注", facts["last_bar"], facts["today"],
                  "最新 bar 为今日——请判定是否已收盘" if facts["last_bar"] == facts["today"]

@@ -54,7 +54,8 @@ def main(argv=None):
     ap.add_argument("--no-dow", action="store_true", help="跳过道氏状态读数")
     ap.add_argument("--no-key-levels", action="store_true", help="跳过 key_levels 锚点")
     ap.add_argument("--key-levels-args", default="",
-                    help="透传 key_levels.py 的附加参数（一个字符串，如 \"--trend-threshold 1.0\"）")
+                    help="透传 key_levels.py 的附加参数（一个字符串，如 \"--trend-threshold 1.0\"；"
+                         "按空格切分，不支持含空格的参数值）")
     args = ap.parse_args(argv)
 
     print("== preflight 1/3：data_check（数据自检 + 四要素，D28）==")

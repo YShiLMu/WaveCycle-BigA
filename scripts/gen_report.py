@@ -46,6 +46,8 @@ import os
 import re
 import sys
 
+from naming import CHART_IMAGE_PATHS, IMAGE_PLACEHOLDERS, doc_names, validate_component
+
 PAGE_FIELDS = [
     "分析日期", "分析级别", "收盘价",
     "核心判断", "当前关键形态", "备选方案", "概率与仓位",
@@ -59,13 +61,7 @@ SUMMARY_FIELDS = [
     "总结核心判断", "总结当前关键形态", "总结备选方案",
     "总结概率与仓位", "总结关键价位", "总结近期交易计划",
 ]
-IMAGE_PLACEHOLDERS = {"主方案全景图路径", "主方案放大图路径",
-                      "替代方案全景图路径", "替代方案放大图路径"}
-STANDARD_IMAGES = ("图表/主方案_全景.png", "图表/主方案_放大.png",
-                   "图表/替代方案_全景.png", "图表/替代方案_放大.png")
 BANNED = re.compile(r"必然|一定|绝对")
-# 文件名组件白名单：中文/字母/数字/下划线/连字符（堵住 .. 与路径分隔符注入）
-NAME_RE = re.compile(r"^[0-9A-Za-z_\u4e00-\u9fff-]+$")
 IMG_REF = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
 
 
@@ -76,12 +72,6 @@ def info(msg):
 def fail(msg):
     print("[错误] %s" % msg, file=sys.stderr)
     sys.exit(1)
-
-
-def validate_name_component(value, label):
-    if not NAME_RE.fullmatch(str(value)):
-        fail("%s 只允许中文/字母/数字/下划线/连字符，收到: %r" % (label, value))
-    return str(value)
 
 
 def main():
@@ -114,8 +104,8 @@ def main():
     if not isinstance(data, dict):
         fail("data.json 顶层应为 JSON 对象")
 
-    name = validate_name_component(data.get("标的名称", ""), "标的名称")
-    code = validate_name_component(data.get("标的代码", ""), "标的代码")
+    name = validate_component(data.get("标的名称", ""), "标的名称")
+    code = validate_component(data.get("标的代码", ""), "标的代码")
     stamp = str(data.get("时间戳", ""))
     if not re.fullmatch(r"\d{8}_\d{4}", stamp):
         fail("时间戳 格式应为 YYYYMMDD_HHMM，收到: %r" % stamp)
@@ -138,10 +128,10 @@ def main():
 
         refs = IMG_REF.findall(body)
         std = [r.replace("\\", "/").lstrip("./") for r in refs
-               if r.replace("\\", "/").lstrip("./") in STANDARD_IMAGES]
+               if r.replace("\\", "/").lstrip("./") in CHART_IMAGE_PATHS]
         if len(std) != 4 or len(set(std)) != 4:
             fail("报告草稿图片引用应为 4 张标准命名图片 %s，实际引用: %s"
-                 % (STANDARD_IMAGES, refs))
+                 % (CHART_IMAGE_PATHS, refs))
         if "{{" in body:
             fail("报告草稿存在未替换占位符 {{...}}")
         for i, line in enumerate(body.splitlines(), 1):
@@ -149,8 +139,9 @@ def main():
             if m:
                 info("[警告] 概率禁词 %r（第 %d 行，若为引用规则原文请人工确认）: %s"
                      % (m.group(0), i, line.strip()[:80]))
+        md_name, _html_name = doc_names(name, code, stamp)
         info("[OK] 草稿校验通过（禁词警告见上，无输出即通过），输出重定向到标准文件名：")
-        info("     分析报告_%s_%s_%s.md" % (name, code, stamp))
+        info("     " + md_name)
         sys.stdout.write(body)
         return 0
 
@@ -184,7 +175,8 @@ def main():
 
     info("[OK] 网页渲染完成（剩余图片占位符 %d 个，待 embed_report_images.py 注入），"
          "输出重定向到标准文件名：" % len(residual))
-    info("     网页报告_%s_%s_%s.html" % (name, code, stamp))
+    _md_name, html_name = doc_names(name, code, stamp)
+    info("     " + html_name)
     info("[NEXT] python embed_report_images.py <归档文件夹>")
     sys.stdout.write(html)
     return 0

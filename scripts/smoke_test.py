@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""冒烟测试 —— 验证 pandas / matplotlib / 中文字体可用，且六个脚本主流程跑通。
+"""冒烟测试 —— 验证 pandas / matplotlib / 中文字体可用，且各脚本主流程跑通。
 
     python smoke_test.py [--keep]
 
@@ -8,7 +8,7 @@
 1. key_levels.py —— 合成 CSV（含跳空缺口、长上影/长下影候选）跑三类锚点输出；
    坏数据 CSV（high<low、日期乱序）验证数据自检拦截（应报错退出，workflow 1.5 口径）；
 2. ew_chart.py —— 绘制 4 张标准图（中文标题、浪段方向 auto/显式、失效价位、
-   江恩 --gann-auto-scale 自动刻度），验证 PNG 非空生成；
+   江恩 --gann-auto-scale 自动刻度、--path 连续浪路径），验证 PNG 非空生成；
 3. embed_report_images.py —— 标准 4 图模式与单方案防御 2 图模式各建一个归档
    文件夹，跑内嵌与校验（含模板头部特征注释校验、替代方案图区"不适用"标记）；
 4. score.py —— 八因子加权排序与共振标签；
@@ -16,11 +16,16 @@
 6. init_archive.py —— 建档（图表/ 子目录、幂等拦截）与 --print-dir 单行输出；
 7. gen_report.py —— data.json 渲染网页（stdout 无 {{残留}}、含模板特征注释）
    与 --md 草稿校验模式；
-8. data_check.py —— 自检表 + 四要素输出、缺 --fq/--source 判不通过、坏数据拦截；
+8. data_check.py —— 自检表 + 四要素输出、缺 --fq/--source 判不通过、坏数据拦截、
+   OHLC 含 NaN/全 NaN 时极值与收盘不输出 nan 假事实；
 9. invalidation_check.py —— 已触发已确认 / 未触发 / --since 过滤三态判定；
 10. swings.py --dow —— 道氏状态读数（3 点判 2 点定 + DO4 事实 + 无 volume 降级）；
 11. rule_check.py —— R5–R7 通过/违反、下跌镜像、缺浪不适用、非法 --wave 报错；
-12. preflight.py —— 三段流水线顺序产出 + data_check 不通过即终止（exit 1）。
+12. preflight.py —— 三段流水线顺序产出 + data_check 不通过即终止（exit 1）；
+13. ew_chart._seg_direction —— R20 极端价位判向口径直测（长上影 close 回落
+    但 high 新高必须判上行）；
+14. 核心纯函数直测 —— fractal_pivots 交替化、cluster_levels 聚类、
+    check_level 最后一根触及边界、gann_auto_scale 分档。
 
 退出码：0 = 全部通过；1 = 任一失败。--keep 保留临时产物目录（默认删除）。
 """
@@ -37,11 +42,11 @@ import tempfile
 
 import pandas as pd
 
+from naming import HTML_TOKENS, IMAGE_KEYS, IMAGE_PLACEHOLDERS
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKILL = os.path.dirname(HERE)
 HTML_TEMPLATE = os.path.join(SKILL, "assets", "网页报告_web_report.html")
-IMAGE_TOKENS = ["{{主方案全景图路径}}", "{{主方案放大图路径}}",
-                "{{替代方案全景图路径}}", "{{替代方案放大图路径}}"]
 FAILED = []
 
 
@@ -112,8 +117,7 @@ def gen_html(path):
     with open(HTML_TEMPLATE, encoding="utf-8") as f:
         text = f.read()
     text = re.sub(r"\{\{([^}]+)\}\}",
-                  lambda m: m.group(0) if m.group(1) in ["主方案全景图路径", "主方案放大图路径",
-                                                         "替代方案全景图路径", "替代方案放大图路径"] else "X",
+                  lambda m: m.group(0) if m.group(1) in IMAGE_PLACEHOLDERS else "X",
                   text)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
@@ -171,7 +175,8 @@ def main(argv=None):
                              "5:260:319:Impulse（推动浪）:up",
                              "--invalid", "130:跌破 130（第 1 浪高点，R7）即失效",
                              "--current", str(last_close),
-                             "--gann", "10:110:up", "--gann-auto-scale"],
+                             "--gann", "10:110:up", "--gann-auto-scale",
+                             "--path", "1@0,2@60,3@110,4@220,5@260,A@319"],
                             "日线级别 · Intermediate · 主方案：五浪推动（Impulse）"),
         "主方案_放大.png": (["--waves", "5:260:319:Impulse（推动浪）",
                              "--invalid", "130:跌破 130（R7）即失效",
@@ -285,7 +290,7 @@ def main(argv=None):
     payload = json.dumps(data, ensure_ascii=False)
     code, out, err = run([sys.executable, os.path.join(HERE, "gen_report.py"),
                           "--data", "-"], stdin_text=payload)
-    img_slugs = [t.strip("{}") for t in IMAGE_TOKENS]
+    img_slugs = IMAGE_PLACEHOLDERS
     leftover = [m for m in re.findall(r"\{\{([^}]+)\}\}", out) if m not in img_slugs]
     check("stdin 渲染网页正常退出", code == 0, err.strip()[:200])
     check("渲染含模板特征注释", "波浪理论网页报告模板" in out)
@@ -317,6 +322,22 @@ def main(argv=None):
                           "--csv", bad_csv3, "--source", "测试", "--fq", "none"])
     check("坏数据记为不通过而非崩溃（exit 1）",
           code == 1 and "不通过" in out and "close 超出" in out, out.strip()[:150])
+    nan_csv = os.path.join(tmp, "bad4_nan.csv")
+    nan = float("nan")
+    pd.DataFrame({"date": ["2024-01-01", "2024-01-02", "2024-01-03"],
+                  "open": [100.0, nan, 102.0], "high": [101.0, nan, 103.0],
+                  "low": [99.0, nan, 101.0], "close": [100.5, nan, 102.5]}).to_csv(nan_csv, index=False)
+    code, out, err = run([sys.executable, os.path.join(HERE, "data_check.py"),
+                          "--csv", nan_csv, "--source", "测试", "--fq", "none"])
+    check("OHLC 含 NaN 记为不通过且极值不输出 nan（exit 1）",
+          code == 1 and "不通过" in out and "nan" not in out.lower(), out.strip()[:200])
+    nan_all_csv = os.path.join(tmp, "bad5_nan_all.csv")
+    pd.DataFrame({"date": ["2024-01-01"],
+                  "open": [nan], "high": [nan], "low": [nan], "close": [nan]}).to_csv(nan_all_csv, index=False)
+    code, out, err = run([sys.executable, os.path.join(HERE, "data_check.py"),
+                          "--csv", nan_all_csv, "--source", "测试", "--fq", "none"])
+    check("OHLC 全 NaN 时极值/收盘缺失分支（exit 1，无 nan 输出）",
+          code == 1 and "无可靠极值" in out and "nan" not in out.lower(), out.strip()[:200])
 
     # ---- 9. invalidation_check.py ----
     print("== 9. invalidation_check.py（触发/确认/未触发/--since）==")
@@ -398,6 +419,61 @@ def main(argv=None):
     check("data_check 不通过即终止（exit 1，不跑 swings）",
           code == 1 and "preflight 终止" in out and "preflight 2/3" not in out,
           out.strip()[-200:])
+
+    # ---- 13. ew_chart._seg_direction 判向口径直测 ----
+    print("== 13. ew_chart._seg_direction（R20 极端价位判向口径）==")
+    sys.path.insert(0, HERE)
+    import ew_chart as _ew
+    mini = pd.DataFrame({
+        "high": [101.0, 103.0, 106.0, 104.0, 107.0, 107.0],
+        "low": [99.0, 100.0, 101.0, 98.0, 100.0, 99.5],
+        "close": [100.5, 102.0, 101.5, 99.0, 105.0, 98.0],
+    })
+    check("终点 high/low 均高 → 上行", _ew._seg_direction(mini, 0, 1) is True)
+    check("终点 high/low 均低 → 下行", _ew._seg_direction(mini, 2, 3) is False)
+    check("长上影（close 回落但 high 新高）→ 上行（原 --path 用收盘判向会判反的 bug 场景）",
+          _ew._seg_direction(mini, 1, 2) is True)
+    check("区间重叠回退收盘比较（close 升 → 上行）", _ew._seg_direction(mini, 2, 4) is True)
+    check("区间重叠回退收盘比较（close 降 → 下行）", _ew._seg_direction(mini, 1, 5) is False)
+
+    # ---- 14. 核心纯函数直测（swings/key_levels/invalidation_check/ew_chart）----
+    print("== 14. 核心纯函数直测（分形交替/聚类容差/失效判定边界/江恩分档）==")
+    import swings as _sw
+    import key_levels as _kl
+    import invalidation_check as _iv
+
+    piv = _sw.fractal_pivots([2, 5, 2, 5, 2, 6, 2, 4, 2], [2, 5, 2, 5, 2, 6, 2, 4, 2], 1)
+    check("fractal_pivots 严格 H/L 交替",
+          [p[2] for p in piv] == ["H", "L", "H", "L", "H", "L", "H"]
+          and [p[1] for p in piv] == [5, 2, 5, 2, 6, 2, 4], str(piv))
+    piv2 = _sw.fractal_pivots([2, 5, 5, 2], [2, 5, 5, 2], 1)
+    check("fractal_pivots 相邻同型保留更极端（合并为 1 个 H）",
+          piv2 == [[2, 5.0, "H"]], str(piv2))
+
+    cl = _kl.cluster_levels([
+        {"center": 100.0, "date": "a", "direction": "压力"},
+        {"center": 100.05, "date": "b", "direction": "压力"},
+        {"center": 50.0, "date": "c", "direction": "支撑"},
+    ], tol=0.001)
+    check("cluster_levels 近邻合并且压力取最高、方向不串簇",
+          len(cl) == 2 and cl[0]["center"] == 100.05 and cl[0]["count"] == 2
+          and cl[1]["center"] == 50.0 and cl[1]["count"] == 1, str(cl))
+
+    df_last = pd.DataFrame({
+        "date": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
+        "open": [100.0, 101.0, 102.0], "high": [101.0, 102.0, 103.0],
+        "low": [99.0, 100.0, 90.0], "close": [100.5, 101.5, 102.0]})
+    r_last = _iv.check_level(df_last, {"price": 90.0, "direction": "break-down",
+                                       "plan": "主", "kind": "规则失效", "rule": "R7"})
+    check("check_level 触及在最后一根 → 待确认 0 根",
+          r_last["status"].startswith("已触发待确认") and "0 根" in r_last["status"]
+          and r_last["confirmed"] is None and r_last["first_touch"] is not None,
+          str(r_last["status"]))
+
+    check("gann_auto_scale 分档边界（9.99→0.05、10→0.5、999.99→5、1000→50、指数固定 50）",
+          _ew.gann_auto_scale(9.99) == 0.05 and _ew.gann_auto_scale(10) == 0.5
+          and _ew.gann_auto_scale(999.99) == 5.0 and _ew.gann_auto_scale(1000) == 50.0
+          and _ew.gann_auto_scale(123, is_index=True) == 50.0)
 
     if FAILED:
         print("\nSMOKE FAILED：%d 项 —— %s" % (len(FAILED), "、".join(FAILED)))

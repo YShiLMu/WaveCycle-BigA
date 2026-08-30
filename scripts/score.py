@@ -118,10 +118,13 @@ def main(argv=None):
         print("    Guideline 原始分 %+d（×2=%d）｜结构 %s｜斐波 %s｜道氏 %s｜江恩价 %s｜江恩时 %s｜蜡烛 %s｜失效距离 %s"
               % (sc["guideline"], 2 * sc["guideline"],
                  *[v if v != "NA" else "NA" for v in f]))
-        denom = 16 if sc["dow"] == "NA" else 18
-        print("    加权总分 %d/%d%s ｜ 共振状态：%s ｜ 闸门：%s"
-              % (sc["total"], denom,
-                 "（道氏 NA：分母剔除，参考满分 16）" if sc["dow"] == "NA" else "",
+        # G21 权威口径（guidelines.md）只定义加权公式、无"满分"概念（Guideline
+        # 命中数无上界），故展示为分项明细，不输出误导性的总分/分母形式
+        fac_sum = sum(v for v in f if v != "NA")
+        fac_max = 12 if sc["dow"] == "NA" else 14
+        print("    加权总分 %d（2×Guideline(%+d)=%d + 七因子合计 %d/%d%s）｜ 共振状态：%s ｜ 闸门：%s"
+              % (sc["total"], sc["guideline"], 2 * sc["guideline"], fac_sum, fac_max,
+                 "，道氏 NA 已剔除" if sc["dow"] == "NA" else "",
                  sc["label"], sc["gate"]))
 
     print("\n== 排序 ==")

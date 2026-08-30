@@ -33,54 +33,7 @@ CSV 列：date,open,high,low,close[,volume]（date 兼容 YYYY-MM-DD 与 YYYYMMD
 
 import argparse
 
-import pandas as pd
-
-
-def _validate_ohlc(df):
-    """数据自检（workflow 第 1 步 1.5 口径）：high ≥ low ≥ 0、open/close 落在
-    [low, high]、volume ≥ 0（如有）、日期升序无重复。坏数据直接报错（行号按 CSV）。"""
-
-    def rows(mask):
-        return [int(i) + 2 for i in df.index[mask][:10]]
-
-    h = df["high"].astype(float)
-    l = df["low"].astype(float)
-    o = df["open"].astype(float)
-    c = df["close"].astype(float)
-    if (h < l).any():
-        raise ValueError("数据自检失败：high < low 的行号 %s" % rows(h < l))
-    if (l < 0).any():
-        raise ValueError("数据自检失败：low < 0 的行号 %s" % rows(l < 0))
-    oob_o = (o < l - 1e-9) | (o > h + 1e-9)
-    if oob_o.any():
-        raise ValueError("数据自检失败：open 超出 [low, high] 的行号 %s" % rows(oob_o))
-    oob_c = (c < l - 1e-9) | (c > h + 1e-9)
-    if oob_c.any():
-        raise ValueError("数据自检失败：close 超出 [low, high] 的行号 %s" % rows(oob_c))
-    if "volume" in df.columns:
-        v = df["volume"].astype(float)
-        if (v < 0).any():
-            raise ValueError("数据自检失败：volume < 0 的行号 %s" % rows(v < 0))
-    dup = df["date"].duplicated()
-    if dup.any():
-        raise ValueError("数据自检失败：日期重复：%s" % sorted(df.loc[dup, "date"].astype(str).head(5)))
-    if not df["date"].is_monotonic_increasing:
-        raise ValueError("数据自检失败：日期未按升序排列")
-
-
-def load_ohlc(csv_path):
-    df = pd.read_csv(csv_path)
-    required = {"date", "open", "high", "low", "close"}
-    missing = required - set(df.columns)
-    if missing:
-        raise ValueError("CSV 缺少列: %s" % sorted(missing))
-    raw = df["date"].astype(str)
-    if raw.str.contains("-").any():
-        df["date"] = pd.to_datetime(raw)
-    else:
-        df["date"] = pd.to_datetime(raw, format="%Y%m%d")
-    _validate_ohlc(df)
-    return df
+from ohlc_io import load_ohlc, fmt_date
 
 
 def cluster_levels(candidates, tol=0.001):
@@ -119,6 +72,7 @@ def detect_swing_levels(df, k=3, tol=0.001, min_gap=3):
     支撑（前低）= 最低价到达簇价（容差内）；价格连续停留在价位之上/之下的
     若干根 K 线只合并计为一次触及（离开后再回来才算新触及），相邻触及
     间隔不足 min_gap 根的并入上一次。有效触及 ≥2 次才输出。
+    同一根 K 线可同时贡献压力与支撑候选（与 swings.fractal_pivots 口径一致）。
 
     返回 [{center, direction("前高"/"前低"), touches, first, last}, ...]，center 降序。
     """
@@ -128,9 +82,11 @@ def detect_swing_levels(df, k=3, tol=0.001, min_gap=3):
     n = len(df)
     seeds = []
     for i in range(k, n - k):
+        # 两个独立 if：同一根 K 线可同时是高点极值与低点极值（如宽幅十字星），
+        # 压力、支撑候选都记录，与 swings.fractal_pivots 口径一致
         if highs[i] >= highs[i - k:i + k + 1].max():
             seeds.append({"center": float(highs[i]), "date": dates[i], "direction": "压力"})
-        elif lows[i] <= lows[i - k:i + k + 1].min():
+        if lows[i] <= lows[i - k:i + k + 1].min():
             seeds.append({"center": float(lows[i]), "date": dates[i], "direction": "支撑"})
     out = []
     for cl in cluster_levels(seeds, tol):
@@ -252,10 +208,6 @@ def detect_horizontal_levels(df, shadow_ratio=2.0, window=250, mode="both", tol=
     return merged
 
 
-def _fmt(d):
-    return pd.Timestamp(d).strftime("%Y-%m-%d") if d is not None else "-"
-
-
 def main(argv=None):
     ap = argparse.ArgumentParser(description="技术分析锚点提取（横向锚点）")
     ap.add_argument("--csv", required=True, help="行情 CSV 路径")
@@ -292,7 +244,7 @@ def main(argv=None):
     for lv in swing_levels:
         print("  %s %.3f —— 触及 %d 次（首次 %s，最近 %s）"
               % (lv["direction"], lv["center"], lv["touches"],
-                 _fmt(lv["first"]), _fmt(lv["last"])))
+                 fmt_date(lv["first"]), fmt_date(lv["last"])))
     if swing_dropped:
         print("  （--recent %d：已省略 %d 条最近触及在最近 %d 根以前的簇；传 --recent 0 查看全量）"
               % (args.recent, swing_dropped, args.recent))
@@ -308,7 +260,7 @@ def main(argv=None):
     if not gaps:
         print("  （无）")
     for d, t, lo, hi in gaps:
-        print("  %s %s %.2f–%.2f" % (_fmt(d), t, lo, hi))
+        print("  %s %s %.2f–%.2f" % (fmt_date(d), t, lo, hi))
     if gap_dropped:
         print("  （--gap-band %.2f：已省略 %d 条距最新收盘 ±%.0f%% 以外的缺口；传 --gap-band 0 查看全量）"
               % (args.gap_band, gap_dropped, args.gap_band * 100))
@@ -329,7 +281,7 @@ def main(argv=None):
         print("  （无）")
     for lv in levels:
         print("  %.3f %s（%s）—— %s，后续收盘未破"
-              % (lv["center"], lv["direction"], _fmt(lv["date"]), lv["kind"]))
+              % (lv["center"], lv["direction"], fmt_date(lv["date"]), lv["kind"]))
 
 
 if __name__ == "__main__":

@@ -26,19 +26,7 @@ import os
 import re
 import sys
 
-BAD_CHARS = r'\\/:*?"<>|'
-DOCS = ("分析报告_%s_%s_%s.md", "网页报告_%s_%s_%s.html")
-
-
-def validate_component(value, label):
-    if not value:
-        raise SystemExit("[错误] %s 不能为空" % label)
-    bad = [ch for ch in value if ch in BAD_CHARS]
-    if bad:
-        raise SystemExit("[错误] %s 含 Windows 非法字符: %r" % (label, "".join(set(bad))))
-    if re.search(r"\s", value):
-        raise SystemExit("[错误] %s 不应含空格: %r" % (label, value))
-    return value
+from naming import doc_names, validate_component
 
 
 def main():
@@ -73,8 +61,8 @@ def main():
     print("[OK] 归档文件夹: %s" % os.path.abspath(folder))
     print("     图表目录: %s" % os.path.abspath(os.path.join(folder, "图表")))
     print("     交付文档（标准命名，禁止改动）：")
-    for tpl in DOCS:
-        print("       - " + os.path.join(folder, tpl % (name, code, stamp)))
+    for doc in doc_names(name, code, stamp):
+        print("       - " + os.path.join(folder, doc))
     print("     浪型图命名（embed_report_images.py 权威）：")
     print("       主方案_全景.png / 主方案_放大.png / 替代方案_全景.png / 替代方案_放大.png")
     print("     生成交付文档后运行：")

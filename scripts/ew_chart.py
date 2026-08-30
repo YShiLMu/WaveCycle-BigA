@@ -17,7 +17,7 @@ OHLC 合理性：high ≥ low ≥ 0、open/close 落在 [low, high]、日期升�
 方向默认 auto = 按端点极端价位判定（终点高/低均高于起点 → 上行，均低 → 下行，
 区间重叠时回退收盘价比较，与 R20 极端价位口径一致），显式 up/down 可覆盖。
 --path 连续浪路径：<标注>:<索引>:<索引>... —— 把一组端点按序连成一条带箭头的连续折线
-（亮色，线宽 1.5px），每个端点画编号框，用于呈现 1-2-3-4-5-A-B-C 完整路径。
+（亮色细线，未走完段灰虚线），浪型文字由底部注释区呈现，用于呈现 1-2-3-4-5-A-B-C 完整路径。
 --channel 推动浪平行通道：<1浪高点索引>:<3浪高点索引>:<2浪低点索引> —— 连接 1、3 浪高点
 为上轨，过 2 浪低点画平行线为下轨。
 --theme dark（默认）/ light：深色画布亮色连线，或旧浅色。
@@ -39,10 +39,11 @@ matplotlib.use("Agg")  # 无界面后端，适配脚本/CI
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
-import pandas as pd
-
 # 中文字体：优先微软雅黑/黑体，避免 DejaVu 缺字形（中文标注变方块）
 from matplotlib import font_manager
+
+from ohlc_io import load_ohlc
+from naming import CHART_VIEWS, SCHEME_NAMES, chart_png
 
 # ---------------------------------------------------------------------------
 # 主题（深色为默认）：深色画布下红涨用亮红、绿跌用亮蓝绿，连线用白/亮青，
@@ -92,59 +93,24 @@ else:  # pragma: no cover
     print("[警告] 未找到中文字体，中文标注可能显示为方块", file=sys.stderr)
 
 
-def _validate_ohlc(df):
-    """数据自检（workflow 第 1 步 1.5 口径）：high ≥ low ≥ 0、open/close 落在
-    [low, high]、volume ≥ 0（如有）、日期升序无重复。坏数据直接报错（行号按 CSV）。"""
-
-    def rows(mask):
-        return [int(i) + 2 for i in df.index[mask][:10]]
-
-    h = df["high"].astype(float)
-    l = df["low"].astype(float)
-    o = df["open"].astype(float)
-    c = df["close"].astype(float)
-    if (h < l).any():
-        raise ValueError("数据自检失败：high < low 的行号 %s" % rows(h < l))
-    if (l < 0).any():
-        raise ValueError("数据自检失败：low < 0 的行号 %s" % rows(l < 0))
-    oob_o = (o < l - 1e-9) | (o > h + 1e-9)
-    if oob_o.any():
-        raise ValueError("数据自检失败：open 超出 [low, high] 的行号 %s" % rows(oob_o))
-    oob_c = (c < l - 1e-9) | (c > h + 1e-9)
-    if oob_c.any():
-        raise ValueError("数据自检失败：close 超出 [low, high] 的行号 %s" % rows(oob_c))
-    if "volume" in df.columns:
-        v = df["volume"].astype(float)
-        if (v < 0).any():
-            raise ValueError("数据自检失败：volume < 0 的行号 %s" % rows(v < 0))
-    dup = df["date"].duplicated()
-    if dup.any():
-        raise ValueError("数据自检失败：日期重复：%s" % sorted(df.loc[dup, "date"].astype(str).head(5)))
-    if not df["date"].is_monotonic_increasing:
-        raise ValueError("数据自检失败：日期未按升序排列")
-
-
-def load_ohlc(csv_path):
-    """读取 CSV，返回带 datetime 索引的 DataFrame。"""
-    df = pd.read_csv(csv_path)
-    required = {"date", "open", "high", "low", "close"}
-    missing = required - set(df.columns)
-    if missing:
-        raise ValueError(f"CSV 缺少列: {sorted(missing)}")
-    # 日期列若为纯数字（如 20070801），pandas 会读成 int64；直接
-    # pd.to_datetime(int) 会被当成 Unix 纳秒时间戳 → 全部解析成 1970-01-01。
-    # 必须先 astype(str) 再解析，才能得到真实交易日。兼容 "2026-08-08" 带连字符格式。
-    df["date"] = pd.to_datetime(df["date"].astype(str))
-    _validate_ohlc(df)
-    df = df.set_index("date").sort_index()
-    return df
-
-
 def _fmt_price(v):
     """价格格式化：整数去小数点，非整数保留两位。"""
     if abs(v - round(v)) < 1e-9:
         return f"{v:.0f}"
     return f"{v:.2f}"
+
+
+def _seg_direction(plot_df, s, e):
+    """段方向判定（R20 极端价位口径）：终点 high/low 均高于起点 → 上行（True），
+    均低于起点 → 下行（False），区间重叠时回退收盘价比较。
+    --waves 的 auto 与 --path 的峰谷判定共用，禁止另写判向逻辑。s/e 为 plot_df 内部索引。"""
+    hs, ls = plot_df.iloc[s]["high"], plot_df.iloc[s]["low"]
+    he, le = plot_df.iloc[e]["high"], plot_df.iloc[e]["low"]
+    if he > hs and le > ls:
+        return True
+    if he < hs and le < ls:
+        return False
+    return bool(plot_df.iloc[e]["close"] >= plot_df.iloc[s]["close"])
 
 
 def _draw_candles(ax, df, last_n=None, t=THEMES["dark"]):
@@ -173,13 +139,12 @@ def _draw_candles(ax, df, last_n=None, t=THEMES["dark"]):
     ax.set_xticks(ticks)
     ax.set_xticklabels([df.index[i].strftime("%Y-%m-%d") for i in ticks],
                        rotation=0, ha="center", fontsize=10, va="top")
-    return df
 
 
 def draw_chart(df, out_path, title, waves, invalids, current_price=None,
                fib_zones=None, last_n=None, levels=None, font_scale=1.0,
                gann_fans=None, theme="dark", paths=None, channels=None,
-               chan_points=None, pivots=None):
+               pivots=None):
     """绘制单方案 K 线图并保存 PNG。
 
     waves: [(label, start_idx, end_idx, form_note, direction), ...]
@@ -194,14 +159,12 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
     theme: "dark"（默认）/ "light"。深色画布下蜡烛与连线改用亮色系。
     paths: [([idx_a, idx_b, ...], labels), ...]  # 连续浪路径：按索引顺序把端点
         # 连成一条带箭头折线（亮色，线宽 0.9px 半透明；最后一段未走完为灰虚线），
-        # 每个端点画编号框 + 价格·日期小字。labels 长度=n 为逐点编号，长度=1 自动序号。
-    pivots: [(idx, big_label), ...]  # 大级别浪标注（[I][II][III]…），白框大号字，
-        # 挂在对应端点上方，与子浪编号框区分（解决级别混乱）。
+        # 浪型文字由底部注释区呈现。labels 长度=n 为逐点标签，长度=1 自动序号。
+    pivots: [(idx, big_label[, peak/trough]), ...]  # 大级别浪标注（[I][II][III]…），
+        # 价格/日期实时取端点极值，呈现在底部浪型区左列，与子浪编号区分级别。
     channels: [(idx1_hi, idx3_hi, idx2_low), ...]  # 推动浪平行通道（常规通道）：
         # 连接 1 浪高点(idx1_hi) 与 3 浪高点(idx3_hi) 的直线为上轨，
         # 过 2 浪低点(idx2_low) 画与上轨平行的下轨。
-    chan_points: [(label, idx, price), ...]  # 通道/路径要用的显式价格覆盖点（可选）
-        # 当端点价格不取自 K 线 high/low 时需要，当前预留。
     """
     plot_df = df.tail(last_n) if last_n is not None else df
     base = len(df) - len(plot_df)  # 索引偏移（浪段索引基于全量 CSV 行号）
@@ -237,8 +200,7 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
     # 1) 连续浪路径：优先（paths 传了就用新样式），只连线不在 K 线上标文字
     sub_rows = []
     if paths:
-        sub_rows = _draw_paths(ax, plot_df, base, paths, t, fs, pivots=pivots,
-                               annotate=False)
+        sub_rows = _draw_paths(ax, plot_df, base, paths, t, fs)
     # 原有的每段浪标注（兼容旧调用；与 paths 可并存）
     for label, s0, e0, note, direction in waves:
         s = s0 - base
@@ -247,17 +209,9 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
             print(f"[警告] 浪段 {label} 索引越界，跳过", file=sys.stderr)
             continue
         xs, xe = s, e
-        # 方向判定（R20 极端价位口径）：显式 up/down 优先；auto 按端点极端价位——
-        # 终点高/低均高于起点 → 上行、均低于起点 → 下行、区间重叠时回退收盘价比较
+        # 方向判定（R20 极端价位口径）：显式 up/down 优先；auto 见 _seg_direction
         if direction == "auto":
-            he, le = plot_df.iloc[e]["high"], plot_df.iloc[e]["low"]
-            hs, ls = plot_df.iloc[s]["high"], plot_df.iloc[s]["low"]
-            if he > hs and le > ls:
-                up = True
-            elif he < hs and le < ls:
-                up = False
-            else:
-                up = plot_df.iloc[e]["close"] >= plot_df.iloc[s]["close"]
+            up = _seg_direction(plot_df, s, e)
         else:
             up = direction == "up"
         ys = plot_df.iloc[s]["low"] if up else plot_df.iloc[s]["high"]
@@ -281,7 +235,6 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
     price_floor = plot_df["low"].min()
     price_ceil = plot_df["high"].max()
     span = price_ceil - price_floor or 1.0
-    x_last = len(plot_df) - 1
 
     # 失效价位：红色虚线
     for price, _label in invalids:
@@ -362,51 +315,50 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
     print(f"[OK] 已保存: {out_path} ({os.path.getsize(out_path)} bytes)")
 
 
-def _draw_paths(ax, plot_df, base, paths, t, fs, pivots=None, annotate=True):
+def _draw_paths(ax, plot_df, base, paths, t, fs):
     """绘制连续浪路径：把 paths 里每个端点序列连成一条带箭头的折线。
 
-    paths: [([idx...], labels), ...]。labels 为每点编号框文字（长度 1=用序号 1..n 自动，
-    长度=n=逐点）。端点价格取该 K 线的极端价位（按走势自动判 high/low）。
+    paths: [([idx...], labels), ...]。labels 为每点浪标签文字（长度 1=用序号 1..n 自动，
+    长度=n=逐点）。端点价格取该 K 线的极端价位：峰谷性按相邻端点段方向判
+    （R20 口径，见 _seg_direction），峰取 high、谷取 low。
     连线：已确认段用亮色细实线（0.9px、半透明），**最后一段**（当前未走完）用灰色虚线。
-    annotate=True（默认）：额外在每个端点画编号框 + 价格·日期小字、大级别 pivot 白框；
-    annotate=False：只连线、不画任何文字（K 线旁无标注，文字由底部注释区呈现），
-    并返回子浪端点序列 sub_rows=[(label, price, date, x)] 供 draw_chart 生成红框浪型列表。
+    只连线、不画任何文字（K 线旁无标注，浪型文字由底部注释区呈现），
+    返回子浪端点序列 sub_rows=[(label, price, date, x)] 供 draw_chart 生成浪型列表。
     """
-    # 价幅用于编号框纵向偏移，避免上下浪点框互相压住
-    span = plot_df["high"].max() - plot_df["low"].min() or 1.0
     sub_rows = []  # [(label, price, date, x)] 有序子浪端点序列
     for idxs, labels in paths:
-        pts = []
         auto_seq = len(labels) == 1
+        # 第一遍：过滤越界点，只留有效端点（峰谷判定依赖相邻有效端点，不能带洞）
+        valid = []
         for i, idx in enumerate(idxs):
             gi = idx - base
-            if gi < 0 or gi >= len(plot_df):
+            if 0 <= gi < len(plot_df):
+                valid.append((gi, labels[0] if auto_seq else labels[i]))
+            else:
                 print(f"[警告] 路径点 {labels[0] if auto_seq else labels[i]}[{i}] 索引越界，跳过",
                       file=sys.stderr)
-                pts.append(None)
-                continue
-            row = plot_df.iloc[gi]
-            # 端点价位：按相邻端点高低自动判该点是顶(high)还是底(low)
-            prev_row = plot_df.iloc[idxs[i - 1] - base] if i > 0 else None
-            if prev_row is not None:
-                up = row["close"] >= prev_row["close"]
-            else:
-                up = True
-            y = row["high"] if up else row["low"]
-            pts.append((gi, y))
-            # 收集子浪端点（仅非空标签；空标签=更大级别/当前，由 pivot 或底部区处理）
-            lbl = labels[0] if auto_seq else labels[i]
-            if lbl != "":
-                px = row["high"] if up else row["low"]
-                date_s = plot_df.index[gi].strftime("%Y-%m-%d")
-                sub_rows.append((lbl, _fmt_price(px), date_s, gi))
-        pts = [p for p in pts if p is not None]
-        if len(pts) < 2:
+        if len(valid) < 2:
             continue
+        # 第二遍：峰谷性按相邻端点段方向判（R20 极端价位口径，见 _seg_direction）——
+        # 上行段到达点为峰（取 high）、起点为谷（取 low）；下行段对称
+        pts = []
+        label_seq = []
+        for j, (gi, lbl) in enumerate(valid):
+            if j == 0:
+                is_peak = not _seg_direction(plot_df, valid[0][0], valid[1][0])
+            else:
+                is_peak = _seg_direction(plot_df, valid[j - 1][0], gi)
+            row = plot_df.iloc[gi]
+            y = row["high"] if is_peak else row["low"]
+            pts.append((gi, y))
+            label_seq.append(lbl)
+            # 收集子浪端点（仅非空标签；空标签=更大级别/当前，由 pivot 或底部区处理）
+            if lbl != "":
+                date_s = plot_df.index[gi].strftime("%Y-%m-%d")
+                sub_rows.append((lbl, _fmt_price(y), date_s, gi))
         xs = [p[0] for p in pts]
         ys = [p[1] for p in pts]
         # 分级折线：labels 非空 → 已确认子浪段（实线）；labels 为空("") → 未走完/更大级别段（虚线）
-        label_seq = [labels[0] if auto_seq else labels[i] for i in range(len(pts))]
         last_labeled = -1
         for k, lb in enumerate(label_seq):
             if lb != "":
@@ -428,57 +380,6 @@ def _draw_paths(ax, plot_df, base, paths, t, fs, pivots=None, annotate=True):
                         arrowprops=dict(arrowstyle="-|>", color=seg,
                                         lw=0.9, shrinkA=0, shrinkB=0),
                         zorder=5)
-        # 编号框（峰谷方向 + 纵向避让 + 右缘让位 + 价格日期小字）；空标签跳过；annotate 才画
-        if not annotate:
-            continue
-        off = span * 0.025
-        x_last = len(plot_df) - 1
-        edge_band = max(4, int(len(plot_df) * 0.08))
-        for k, (x, y) in enumerate(pts):
-            if label_seq[k] == "":
-                continue  # 更大级别/未走完点：不画子浪编号框，仅连线（由 pivot 挂大级别框）
-            row = plot_df.iloc[x]
-            is_peak = abs(ys[k] - row["high"]) < 1e-6
-            sign = 1 if is_peak else -1   # 波峰向上、波谷向下
-            dy = sign * ((k % 2) * off + off)
-            if k > 0 and abs(x - pts[k - 1][0]) < 3:
-                dy += sign * off
-            if x_last - x < edge_band:
-                x = x_last - edge_band
-            # 端点极端价位 + 日期
-            px = row["high"] if is_peak else row["low"]
-            date_s = plot_df.index[x].strftime("%Y-%m-%d")
-            ax.annotate(f"[{label_seq[k]}]", xy=(x, y),
-                        xytext=(x, y + dy),
-                        fontsize=12 * fs, fontweight="bold", ha="center",
-                        color=t["text"],
-                        bbox=dict(boxstyle="round,pad=0.16", fc=t["label_fc"],
-                                  ec=t["frame"], alpha=0.9, lw=0.7), zorder=8)
-            # 价格·日期小字（编号框外侧：波峰在上、波谷在下，避免遮 K 线）
-            ax.annotate(f"{_fmt_price(px)}·{date_s}", xy=(x, y),
-                        xytext=(x, y + dy + sign * span * 0.018),
-                        fontsize=9 * fs, ha="center",
-                        va="bottom" if sign > 0 else "top", color=t["note"],
-                        zorder=8)
-        # 大级别浪标注（分级）：白框大号字挂在对应端点（有底色）。annotate 才画
-        if pivots:
-            for item in pivots:
-                idx, big, kind = item if len(item) == 3 else (item[0], item[1], "peak")
-                gi = idx - base
-                if gi < 0 or gi >= len(plot_df):
-                    print(f"[警告] 大级别标注 {big} 索引越界，跳过", file=sys.stderr)
-                    continue
-                row = plot_df.iloc[gi]
-                is_peak = kind == "peak"
-                sign = 1 if is_peak else -1
-                y_anchor = row["high"] if is_peak else row["low"]
-                ax.annotate(big, xy=(gi, y_anchor),
-                            xytext=(gi, y_anchor + sign * span * 0.06),
-                            fontsize=14 * fs, fontweight="bold", ha="center",
-                            color=t["text"],
-                            bbox=dict(boxstyle="round,pad=0.22",
-                                      fc=t["label_fc"], ec=t["channel"],
-                                      alpha=0.95, lw=1.2), zorder=10)
     return sub_rows
 
 
@@ -772,16 +673,16 @@ def main():
         if args.out:
             p.error("--out 与 --out-auto 只能二选一")
         parts = args.out_auto.split("|")
-        if len(parts) != 3 or parts[1] not in ("主方案", "替代方案") or parts[2] not in ("全景", "放大"):
+        if len(parts) != 3 or parts[1] not in SCHEME_NAMES or parts[2] not in CHART_VIEWS:
             p.error('--out-auto 格式应为 "目录|主方案|全景"（方案∈{主方案,替代方案}，图型∈{全景,放大}），'
                     "收到: %s" % args.out_auto)
-        out_path = os.path.join(parts[0], "%s_%s.png" % (parts[1], parts[2]))
+        out_path = os.path.join(parts[0], chart_png(parts[1], parts[2]))
     elif args.out:
         out_path = args.out
     else:
         p.error("必须提供 --out 或 --out-auto 之一")
 
-    df = load_ohlc(args.csv)
+    df = load_ohlc(args.csv, set_date_index=True)
 
     # 江恩扇形：auto 模式统一按第一个锚点价格分档（D23 同一分析内禁止换刻度）
     gann_fans = []

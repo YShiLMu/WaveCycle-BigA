@@ -197,8 +197,12 @@ def dow_state(dow_pivs, rows, has_volume):
     if has_volume:
         seg = [r for r in rows if len(r) >= 6][-20:]
         if len(seg) >= 4:
-            up = [r[5] for a, b in zip(seg, seg[1:]) if b[4] > a[4] for r in [b]]
-            dn = [r[5] for a, b in zip(seg, seg[1:]) if b[4] < a[4] for r in [b]]
+            up, dn = [], []
+            for prev_bar, bar in zip(seg, seg[1:]):
+                if bar[4] > prev_bar[4]:
+                    up.append(bar[5])
+                elif bar[4] < prev_bar[4]:
+                    dn.append(bar[5])
             if up and dn:
                 ratio = (sum(up) / len(up)) / (sum(dn) / len(dn))
                 lines.append("成交量：近 20 根上涨日均量/下跌日均量 = %.2f（%s）——与道氏状态是否互证由模型判定（DO4）"

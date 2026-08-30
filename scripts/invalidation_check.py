@@ -33,20 +33,21 @@ import sys
 
 import pandas as pd
 
-from key_levels import load_ohlc, _fmt
+from ohlc_io import load_ohlc, fmt_date
 
 
 def parse_level(text):
     parts = [p.strip() for p in text.split("|")]
     if len(parts) != 5:
-        raise ValueError("--level 需为 5 段「价位|方向|方案|类型|规则」，收到 %d 段：%r" % (len(parts), text))
+        raise SystemExit("[错误] --level 需为 5 段「价位|方向|方案|类型|规则」，收到 %d 段：%r"
+                         % (len(parts), text))
     price_s, direction, plan, kind, rule = parts
     if direction not in ("break-down", "break-up"):
-        raise ValueError("--level 方向段须为 break-down（跌破）或 break-up（升破），收到：%r" % direction)
+        raise SystemExit("[错误] --level 方向段须为 break-down（跌破）或 break-up（升破），收到：%r" % direction)
     try:
         price = float(price_s)
     except ValueError:
-        raise ValueError("--level 价位段不是数字：%r" % price_s)
+        raise SystemExit("[错误] --level 价位段不是数字：%r" % price_s)
     return {"price": price, "direction": direction, "plan": plan, "kind": kind, "rule": rule}
 
 
@@ -80,29 +81,26 @@ def check_level(df, lv, since=None, confirm_bars=2):
         return {**lv, "status": "未触发", "first_touch": None,
                 "confirmed": None, "run": 0, "dist": dist}
 
-    # 触及后（从下一根起）连续未收回的最长与当前尾段运行
+    # 触及后逐根扫描：streak = 当前连续未收回根数；streak 首次达到 confirm_bars
+    # 的那根即确认日（确认后 streak 只表示当前尾段，不再影响判定）
     def recovered(c):
         return c > price if down else c < price
 
-    run = 0          # 触及后首个连续未收回运行长度
     confirm_idx = None
-    cur = 0          # 触及后当前尾段连续未收回
+    streak = 0
     for j in range(touch + 1, len(df)):
         if not recovered(closes[j]):
-            run += 1
-            if run == confirm_bars:
+            streak += 1
+            if confirm_idx is None and streak >= confirm_bars:
                 confirm_idx = j
-            cur += 1
         else:
-            if confirm_idx is None:
-                run = 0
-            cur = 0
+            streak = 0
     confirmed = confirm_idx is not None
     status = ("已触发且已确认（连续 %d 根收盘未收回）" % confirm_bars if confirmed
-              else "已触发待确认（触及后连续未收回 %d 根，确认窗口 %d）" % (cur, confirm_bars))
+              else "已触发待确认（触及后连续未收回 %d 根，确认窗口 %d）" % (streak, confirm_bars))
     return {**lv, "status": status, "first_touch": dates[touch],
             "confirmed": dates[confirm_idx] if confirmed else None,
-            "run": run if confirmed else cur, "dist": dist}
+            "run": streak, "dist": dist}
 
 
 def main(argv=None):
@@ -131,7 +129,7 @@ def main(argv=None):
                ("%.3f（价格在下方）" % -r["dist"]) if r["dist"] is not None else "-"
         print("| %s | %.3f | %s | %s | %s | %s | %s | %s | %s |"
               % (lv["plan"], lv["price"], arrow, lv["kind"], lv["rule"], r["status"],
-                 _fmt(r["first_touch"]), _fmt(r["confirmed"]), dist))
+                 fmt_date(r["first_touch"]), fmt_date(r["confirmed"]), dist))
         if "已触发" in r["status"]:
             n_trig += 1
             if "已确认" in r["status"]:

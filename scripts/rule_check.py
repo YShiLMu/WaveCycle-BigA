@@ -32,12 +32,12 @@ import sys
 def parse_wave(text):
     parts = text.split(":")
     if len(parts) != 3:
-        raise ValueError("--wave 需为「标签:起点价:终点价」，收到：%r" % text)
+        raise SystemExit("[错误] --wave 需为「标签:起点价:终点价」，收到：%r" % text)
     label = parts[0].strip()
     try:
         return label, float(parts[1]), float(parts[2])
     except ValueError:
-        raise ValueError("--wave 价格段不是数字：%r" % text)
+        raise SystemExit("[错误] --wave 价格段不是数字：%r" % text)
 
 
 def get(waves, label):
