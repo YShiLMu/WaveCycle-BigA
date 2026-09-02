@@ -340,3 +340,36 @@
 | CS-13 形态止损合规 | 执行触发 | references/candlestick.md 第 7.3 节 | 形态止损设在失效价位内侧（更紧）；落在外侧时采用失效价位；不得放宽失效价位 | | 放宽失效价位属违反 |
 | CS-14 假突破判定 | 执行触发 | references/candlestick.md 第 7.4 节 | 破高反跌/破低反涨须收盘收回确认；突破有效性看收市价维持在突破位之上/之下；止损设假突破极值外侧、目标为区间另一边界 | | 未收盘确认即反手属违反 |
 | CS-15 背离佐证口径 | 执行触发 | references/candlestick.md 第 7.6 节 | 背离只作佐证、不单独触发；背离方向与数浪矛盾时计 0 分披露、不改数法 | | 背离单独触发属违反 |
+
+## 9. Neely 校验（09 Neely校验清单）
+
+> 来源：Neely《Mastering Elliott Wave》ch03–ch10，转引 `references/rules.md`（R33）、`references/guidelines.md`（G28/G29）、`references/power_ratings.md`。定位：单浪归口作**微观判定**、事后验证与触点数作**可信度加分**、Power Rating 作**量化参考**；结论只进入 G21 评分与披露，不产生失效价位（references/rules.md R19/R20 承担）。
+
+### 9.1 单浪归口（Pre-Constructive，references/rules.md R33 / references/defaults.md D33–D34）
+
+| 检查项 | 判定标准 | 结论 | 备注 |
+| --- | --- | --- | --- |
+| Rule 标识 | m2/m1 回撤%：<38.2%→R1；≥38.2%且<61.8%→R2；=61.8%→R3；61.8<x<100%→R4；≥100%且<161.8%→R5；161.8≤x≤261.8%→R6；>261.8%→R7（scripts/monowave_judge.py） | | 端点按极端价位；仅单浪粒度，不替代 R5–R7 |
+| 行为归类 | ≤61.8%→Directional；>61.8%→Non-Directional；方向终止=回撤>100%；非方向终止=超全范围 161.8% | | 与 Impulsive/Corrective 不同维度 |
+
+### 9.2 事后验证（Post-Constructive，references/guidelines.md G28 / references/defaults.md D36）
+
+| 检查项 | 判定标准 | 结论 | 备注 |
+| --- | --- | --- | --- |
+| Stage 1（时间） | 第 5 浪结束后是否在「第 5 浪形成用时以内」穿越 2-4 趋势线（scripts/post_constructive_check.py） | | 超时提示 Terminal / 第 4 浪未走完 / 数法需复查 |
+| Stage 2（深度） | 按延长类型核对回撤（1st→第 2 浪区；3rd→第 4 浪区且整段>61.8%；5th→≥61.8% 但不完全） | | 可信度加分项，不判死、不产生失效价位 |
+
+### 9.3 触点数（references/guidelines.md G29）
+
+| 检查项 | 判定标准 | 结论 | 备注 |
+| --- | --- | --- | --- |
+| Impulse 触点数 | 同级 6 点仅 4 点触线；>4 点倾向 Corrective 复合形态 | | 与 G3/G4 通道结合 |
+| Standard Correction | 4 点仅 3 点触碰；4 点全触→Complex / Non-Standard 的一部分 | | 除 Triangle 外适用 |
+
+### 9.4 Power Rating（references/power_ratings.md / references/defaults.md D35）
+
+| 检查项 | 判定标准 | 结论 | 备注 |
+| --- | --- | --- | --- |
+| 评级 | 按已完成修正浪类型查表（scripts/power_rating.py，19 变体 ±0…±3） | | 类型由模型数浪确定 |
+| 回撤预测 | 0→约 100%；±1→≤90%；±2→≤80%；±3→60–70% | | 仅波浪层内部参考，不并入 8 因子权重（D25） |
+| Triangle 例外 | Elongated Zigzag/Flat、Zigzag 在三角形内评级归 0 | | references/power_ratings.md 表注 |

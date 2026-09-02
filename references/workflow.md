@@ -308,6 +308,14 @@
 
 反例（2026-08-30 创新药 886015）：[1] 终点取了 V 反大阳线的 973.495（2024-02-28）而非段内极值 1006.689（2024-03-14），导致图表出现"[2] 段 K 线高点高于 [1] 标注高点"的矛盾，且 [2] 回撤率与斐波共振表述连锁失真——端点错一处，其后所有比率计算都在错误底座上；脚本校验（rule_check 等）只验证"给定端点下的一致性"，对端点本身的错误无能为力。
 
+#### 2.6 单浪归口（Neely Pre-Constructive，references/rules.md R33 / D33–D34）
+
+在划定主要摆动并确定端点后（2.1–2.5），对候选 Monowave 序列做**单浪归口**：用脚本 `scripts/monowave_judge.py`（`--m1 "起点:终点" --m2 "起点:终点"`，可加 `--m0`），算出 m2/m1 回撤% → Rule 1–7 标识 + Directional / Non-Directional 行为归类（references/rules.md R33）。归口结果为后续 Structure Series（`references/structure_series.md`）与形态判定提供单浪身份。
+
+- 判定口径：m2/m1 <38.2%→R1；≥38.2%且<61.8%→R2；=61.8%→R3；61.8%<x<100%→R4；≥100%且<161.8%→R5；161.8%≤x≤261.8%→R6；>261.8%→R7（D33）。
+- 行为归类：≤61.8%→Directional（方向性）；>61.8%→Non-Directional（非方向性）（D34；与 Impulsive/Corrective 是**不同维度**）。
+- 端点价取 swings 极端价位（R20）；脚本只给 Rule+归类事实，Condition/Category 字母对照原书表（references/rules.md R33 注）。该归口粒度与 R5–R7（整浪铁律）不同，**不互相替代**。
+
 ### 3. 枚举候选数法（主方案 + 替代方案）
 
 #### 3.1 强制要求
@@ -394,6 +402,8 @@
 #### 6.2 概率排序
 
 按 references/guidelines.md G21 的八个因子评分：Guideline 命中数、结构完整度、斐波那契共振、道氏趋势一致性（references/dow.md第 7 节）、江恩价格共振、江恩时间共振（references/gann.md第 3、5 节）、蜡烛图信号（references/candlestick.md第 6 节，03 验证数浪核对后回填）、失效价位距离（越远越安全）。**统一评分口径**：加权总分 = 2×Guideline 得分 + 结构完整度 + 斐波那契共振 + 道氏一致性 + 江恩价格共振 + 江恩时间共振 + 蜡烛图信号 + 失效距离（权重 2:1:1:1:1:1:1:1，references/defaults.md D25），各项 0–2 分档与"失效距离相近"判定带见 references/workflow.md 第 5 步第 7 节（概率重新排序）；初始轮与更新轮使用同一口径（references/workflow.md 第 5 步第 7 节（概率重新排序））。同时按 references/guidelines.md G26 标注共振状态标签（三共振/双共振/单信号/背离），仓位闸门按 references/guidelines.md G27 执行。排序不产生合法性判断，只影响仓位与计划（references/guidelines.md G21；references/terminology.md 1.7.6）。加权总分、排名、共振状态标签与仓位闸门结论可用脚本 `scripts/score.py` 计算（各因子 0–2 分制校验，标签与闸门口径同 references/guidelines.md G26/G27），禁止 10 分制、5 分制等其他分制。
+
+**功率评级参考（可选，power_rating.py）**：对已完成的修正浪类型，可用脚本 `scripts/power_rating.py --type "Double Zigzag"` 查其功率评级（±0…±3）与预期回撤比例（`references/power_ratings.md` / D35），作为概率排序的**波浪层内部量化参考**——**不并入 8 因子权重（D25 不变）**，仅辅助判断修正浪被下一形态回撤的可能性。
 
 输出格式：
 
@@ -645,6 +655,17 @@
 | 执行触发核对 | 执行信号满足三闸门（方向/验证/落位）、形态止损合规、假突破收盘确认（CS-10–CS-15；references/candlestick.md第 7 节） | | |
 
 核对结论（蜡烛图信号因子得分 + 依据）随验证移交单进入 04 生成报告的概率排序章节；蜡烛图信号只确认、不裁决，永不否决数法、永不覆盖失效价位（`references/rule_conflicts.md`）。
+
+#### 4.5 事后验证（Neely Post-Constructive，post_constructive_check.py，references/guidelines.md G28 / D36）
+
+与道氏、江恩、蜡烛图并列，数浪完成后用**事后行为**核对推动浪数法的可信度。对已完成推动浪，用脚本 `scripts/post_constructive_check.py`（`--csv <路径> --w1 "起点价:终点价" --w2 "日期:价" --w4 "日期:价" --w5 "日期:价" --ext 1/3/5`）做两阶段确认：
+
+| 检查项 | 判定标准 | 结论 | 备注 |
+| --- | --- | --- | --- |
+| Stage 1（时间） | 第 5 浪结束后是否在「第 5 浪形成用时以内」穿越 2-4 趋势线（references/guidelines.md G28） | | 超时提示：可能是 Terminal / 第 4 浪未走完 / 数法需复查 |
+| Stage 2（深度） | 按延长类型核对回撤：1st→第 2 浪区；3rd→第 4 浪区（整段>61.8% 提示更大级别）；5th→≥61.8% 但不完全（references/guidelines.md G28） | | 回撤极限由脚本给出，是否"回到目标区"由模型结合 G21 评估 |
+
+**定位：可信度加分项**——符合→加分、不符→降分，**不判死、不产生失效价位**（失效价位由 references/rules.md R19/R20 承担）；加分几档按 references/guidelines.md G21 由模型评估。该验证只确认、不裁决（不否决数法、不覆盖失效价位），与蜡烛图信号同性质；2-4 趋势线确认结果随验证移交单进入 04 生成报告的概率排序章节。
 
 ### 5. 失效价位验证
 
