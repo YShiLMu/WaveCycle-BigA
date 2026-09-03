@@ -61,6 +61,14 @@ def normalize_date(d):
     return d
 
 
+def _normdate(x):
+    """统一 20260828 / 2026-08-28 → date 对象（用于与 out 日期匹配，兼容 CSV YYYYMMDD 列）。"""
+    s = str(x).strip()
+    if len(s) == 8 and s.isdigit():
+        return datetime.date(int(s[:4]), int(s[4:6]), int(s[6:8]))
+    return datetime.date.fromisoformat(s)
+
+
 def to_week_key(date_str):
     dt = datetime.date.fromisoformat(date_str)
     iso = dt.isocalendar()
@@ -232,6 +240,10 @@ def main():
                         "含 peak/trough 定位，按极端价位 R20 口径）")
     p.add_argument("--tail", type=int, default=None,
                    help="只输出最近 N 个摆动点（表与参数串均生效）")
+    p.add_argument("--path", default=None, metavar="标签@日期,...",
+                   help="把选定的浪端点(标签@日期)转成 ew_chart --path 索引串：按日期在摆动点中定位"
+                        "(须为 swings 含影线极值，R20)，校验索引严格递增，首点即起画点(ew_chart --start)；"
+                        "索引由脚本定，禁止手填。例：--path \"1@2024-02-06,2@2026-06-30\"")
     p.add_argument("--dow", action="store_true",
                    help="输出道氏趋势状态读数（D30：最近 3 高/3 低、D11 显著筛、"
                         "3点判2点定 + 第3点一致性校验 + DO4 成交量事实）；"
@@ -309,6 +321,27 @@ def main():
                         for idx, _d, _p, kind, _w in out)
         print("\n--pivot 参数串（把 ? 换成浪标签即可直接粘贴；大级别标注用，子浪请用 --path/--waves）：")
         print("  --pivot " + frag)
+
+    if args.path:
+        seq = []
+        for tok in args.path.split(","):
+            tok = tok.strip()
+            if "@" not in tok:
+                raise SystemExit("[错误] --path 每条应为 标签@日期，收到: %s" % tok)
+            label, d = tok.split("@", 1)
+            d = normalize_date(d)
+            hit = next((o for o in out if _normdate(o[1]) == _normdate(d)), None)
+            if hit is None:
+                raise SystemExit("[错误] 日期 %s 不在摆动点中（端点须为 swings 含影线极值，R20）：%s"
+                                 % (d, label))
+            seq.append((label, hit[0], hit[1]))
+        idxs = [i for _l, i, _d in seq]
+        if any(idxs[k] >= idxs[k + 1] for k in range(len(idxs) - 1)):
+            raise SystemExit("[错误] --path 端点索引未严格递增（日期须升序）")
+        frag = ",".join("%s@%d" % (l, i) for l, i, _d in seq)
+        print("\n--path 参数串（索引由 swings 摆动点定位，禁止手填；首点即起画点）：")
+        print("  --path \"" + frag + "\"")
+        print("  起画点(ew_chart --start): %s (idx %s)" % (seq[0][2], seq[0][1]))
 
     if args.fib:
         parts = [float(x) for x in args.fib.split(":")]

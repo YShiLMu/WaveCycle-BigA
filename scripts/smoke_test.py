@@ -7,15 +7,14 @@
 覆盖：
 1. key_levels.py —— 合成 CSV（含跳空缺口、长上影/长下影候选）跑三类锚点输出；
    坏数据 CSV（high<low、日期乱序）验证数据自检拦截（应报错退出，workflow 1.5 口径）；
-2. ew_chart.py —— 绘制 4 张标准图（中文标题、浪段方向 auto/显式、失效价位、
+2. ew_chart.py —— 绘制 2 张标准图（每方案一张全景，见 naming.CHART_VIEWS；中文标题、浪段方向 auto/显式、失效价位、
    江恩 --gann-auto-scale 自动刻度、--path 连续浪路径），验证 PNG 非空生成；
 3. embed_report_images.py —— 标准 4 图模式与单方案防御 2 图模式各建一个归档
    文件夹，跑内嵌与校验（含模板头部特征注释校验、替代方案图区"不适用"标记）；
 4. score.py —— 八因子加权排序与共振标签；
 5. swings.py —— 合成 CSV 跑分形摆动点提取、--tail 截断与 --chart-args 参数串；
 6. init_archive.py —— 建档（图表/ 子目录、幂等拦截）与 --print-dir 单行输出；
-7. gen_report.py —— data.json 渲染网页（stdout 无 {{残留}}、含模板特征注释）
-   与 --md 草稿校验模式；
+7. gen_report_web.py / gen_report_md.py —— data.json 渲染网页与 md（stdout 无 {{残留}}、含模板特征注释）；
 8. data_check.py —— 自检表 + 四要素输出、缺 --fq/--source 判不通过、坏数据拦截、
    OHLC 含 NaN/全 NaN 时极值与收盘不输出 nan 假事实；
 9. invalidation_check.py —— 已触发已确认 / 未触发 / --since 过滤三态判定；
@@ -39,6 +38,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+
+from naming import IMAGE_KEYS, chart_png
 
 import pandas as pd
 
@@ -104,9 +105,8 @@ def gen_csv(path, n=320, seed=7):
     return rows
 
 
-def gen_md(path, n_img=4):
-    keys = [("主方案全景", "主方案_全景.png"), ("主方案放大", "主方案_放大.png"),
-            ("替代方案全景", "替代方案_全景.png"), ("替代方案放大", "替代方案_放大.png")]
+def gen_md(path, n_img=2):
+    keys = list(IMAGE_KEYS)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write("# 分析报告（冒烟测试）\n\n## 2 主方案\n\n")
         for name, fn in keys[:n_img]:
@@ -165,9 +165,9 @@ def main(argv=None):
           (out + err).strip()[:200])
 
     # ---- 2. ew_chart.py ----
-    print("== 2. ew_chart.py（4 张标准图：中文标题/浪段方向/失效价位/江恩自动刻度）==")
+    print("== 2. ew_chart.py（2 张标准图[全景]：中文标题/浪段方向/失效价位/江恩自动刻度）==")
     charts = {
-        "主方案_全景.png": (["--waves",
+        chart_png("主方案", "全景"): (["--waves",
                              "1:0:60:Impulse（推动浪）:up",
                              "2:60:110:Zigzag（锯齿形）:down",
                              "3:110:220:Impulse（延长浪）:up",
@@ -178,21 +178,13 @@ def main(argv=None):
                              "--gann", "10:110:up", "--gann-auto-scale",
                              "--path", "1@0,2@60,3@110,4@220,5@260,A@319"],
                             "日线级别 · Intermediate · 主方案：五浪推动（Impulse）"),
-        "主方案_放大.png": (["--waves", "5:260:319:Impulse（推动浪）",
-                             "--invalid", "130:跌破 130（R7）即失效",
-                             "--current", str(last_close), "--last", "80"],
-                            "日线级别 · Intermediate · 主方案放大：第 5 浪"),
-        "替代方案_全景.png": (["--waves",
+        chart_png("替代方案", "全景"): (["--waves",
                                "A:0:60:Zigzag（锯齿形）:up",
                                "B:60:110:Correction（调整浪）:down",
                                "C:110:319:Impulse（推动浪）:up",
                                "--invalid", "95:跌破 95（A 浪起点，R5）即失效",
                                "--current", str(last_close)],
                               "日线级别 · Intermediate · 替代方案：A-B-C"),
-        "替代方案_放大.png": (["--waves", "C:240:319:Impulse（推动浪）",
-                               "--invalid", "95:跌破 95（R5）即失效",
-                               "--current", str(last_close), "--last", "80"],
-                              "日线级别 · Intermediate · 替代方案放大：C 浪"),
     }
     chart_dir = os.path.join(tmp, "图表4")
     os.makedirs(chart_dir)
@@ -203,9 +195,9 @@ def main(argv=None):
         png = os.path.join(chart_dir, fn)
         check("生成 %s" % fn, code == 0 and os.path.getsize(png) > 0, err.strip()[:200])
 
-    # ---- 3. embed_report_images.py：4 图模式 + 2 图防御模式 ----
-    print("== 3. embed_report_images.py（4 图标准模式 + 2 图防御模式）==")
-    for case, n_img in (("标准4图", 4), ("防御2图", 2)):
+    # ---- 3. embed_report_images.py：2 图标准模式 + 1 图防御模式 ----
+    print("== 3. embed_report_images.py（2 图标准模式 + 1 图防御模式）==")
+    for case, n_img in (("标准2图", 2), ("防御1图", 1)):
         folder = os.path.join(tmp, "case_" + case)
         os.makedirs(os.path.join(folder, "图表"))
         for fn in list(charts)[:n_img]:
@@ -219,7 +211,8 @@ def main(argv=None):
         check("%s html 内嵌 %d 张" % (case, n_img),
               html.count("data:image/png;base64,") == n_img)
         if n_img == 2:
-            check("2 图模式替代方案图区标记不适用", "单方案防御模式" in html)
+            if case == "防御1图":
+                check("防御1图 替代方案图区标记不适用", "单方案防御模式" in html)
         md = open(os.path.join(folder, "分析报告_冒烟_000000_20260101.md"),
                   encoding="utf-8").read()
         check("%s md 内嵌 %d 张" % (case, n_img),
@@ -271,37 +264,46 @@ def main(argv=None):
     check("--print-dir 单行输出且 --force 复用",
           code == 0 and printed == folder, printed[:200])
 
-    # ---- 7. gen_report.py（data.json 走 stdin，零落盘）----
-    print("== 7. gen_report.py（stdin data.json 渲染网页 + --md 草稿校验）==")
+    # ---- 7. gen_report_web / gen_report_md（data.json 走 stdin，零落盘）----
+    print("== 7. gen_report_web.py / gen_report_md.py（stdin data.json 渲染网页与 md）==")
     data = {
         "标的名称": "冒烟", "标的代码": "000000", "时间戳": "20260101_1200",
-        "page": {"分析日期": "2026-01-01", "分析级别": "日线级别",
-                 "收盘价": str(last_close), "核心判断": "测试", "当前关键形态": "测试",
-                 "备选方案": "测试", "概率与仓位": "测试",
-                 "数据范围": "2024-01-01 起", "放大图数据范围": "近 80 根",
-                 "上方突破观察价位": "130", "上方突破观察说明": "测试",
-                 "下方防守价位": "95", "下方防守说明": "测试",
-                 "纪律止损价位": "94", "纪律止损说明": "测试",
-                 "数据来源": "合成数据", "生成时间": "2026-01-01 12:00"},
-        "summary": {"总结核心判断": "测试", "总结当前关键形态": "测试",
-                    "总结备选方案": "测试", "总结概率与仓位": "测试",
-                    "总结关键价位": "测试", "总结近期交易计划": "测试"},
+        "fields": {
+            "分析日期": "2026-01-01", "分析级别": "日线级别", "收盘价": str(last_close),
+            "主方案说明": "测试", "主方案失效": "测试", "替代方案": "测试",
+            "概率说明": "测试", "概率结论": "测试", "交易计划": "测试",
+            "风险提示": "测试", "更新跟踪": "测试",
+            "数据来源": "合成数据", "生成时间": "2026-01-01 12:00",
+        },
+        "tables": {
+            "分析前提": [{"项": "级别", "内容": "日线级别"}],
+            "主方案数浪": [{"浪": "1", "端点": "100/2024-01-01 → 160/2024-02-01", "结构": "Impulse", "说明": "测试"}],
+            "neely参考": [{"脚本": "结构阶梯", "输出": "通过", "意义": "测试"}],
+            "八因子": [{"因子": "波浪 Rule", "主方案": "通过", "替代方案": "通过"}],
+            "失效价位": [{"方案": "主方案", "失效价位": "130", "规则依据": "R7", "触发后果": "测试"}],
+        },
+        "简明分析说明": {
+            "大级别浪": "第4浪", "小级别浪": "第4浪的b浪",
+            "neely得分": 1, "neely强度": "中等", "结论": "偏多",
+            "端点": [{"价": 100, "日": "2024-01-01"}, {"价": 160, "日": "2024-02-01"}],
+        },
     }
     payload = json.dumps(data, ensure_ascii=False)
-    code, out, err = run([sys.executable, os.path.join(HERE, "gen_report.py"),
+    # 网页
+    code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_web.py"),
                           "--data", "-"], stdin_text=payload)
     img_slugs = IMAGE_PLACEHOLDERS
     leftover = [m for m in re.findall(r"\{\{([^}]+)\}\}", out) if m not in img_slugs]
     check("stdin 渲染网页正常退出", code == 0, err.strip()[:200])
     check("渲染含模板特征注释", "波浪理论网页报告模板" in out)
     check("stdout 无非图片 {{残留}}", code == 0 and not leftover, str(leftover)[:200])
-    draft_md = os.path.join(tmp, "draft.md")
-    gen_md(draft_md, 4)
-    code, out, err = run([sys.executable, os.path.join(HERE, "gen_report.py"),
-                          "--data", "-", "--md", draft_md], stdin_text=payload)
-    check("--md 草稿校验通过并原样输出",
-          code == 0 and "分析报告（冒烟测试）" in out and "主方案_全景.png" in out,
-          (out + err).strip()[:200])
+    # md
+    code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_md.py"),
+                          "--data", "-"], stdin_text=payload)
+    md_leftover = re.findall(r"\{\{([^}]+)\}\}", out)
+    check("stdin 渲染分析报告 md 正常退出", code == 0, err.strip()[:200])
+    check("md 渲染含标题特征", code == 0 and "Elliott Wave 分析报告" in out, (out + err).strip()[:150])
+    check("md 无未替换 {{残留}}", code == 0 and not md_leftover, str(md_leftover)[:200])
 
     # ---- 8. data_check.py ----
     print("== 8. data_check.py（自检表 + 四要素 + 坏数据披露）==")

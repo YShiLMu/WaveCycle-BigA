@@ -33,6 +33,8 @@ import argparse
 import os
 import sys
 
+import pandas as pd
+
 import matplotlib
 
 matplotlib.use("Agg")  # 无界面后端，适配脚本/CI
@@ -100,6 +102,17 @@ def _fmt_price(v):
     return f"{v:.2f}"
 
 
+def _label_level(lb):
+    """浪标签层级：连字符段数+1。1→1级、1-1→2级、1-1-1→3级（标注"1-1-1"式多级子浪）。"""
+    return str(lb).count("-") + 1
+
+
+def _level_color(lb, t):
+    """按标签层级取配色：1级白、2级青、3级橙（显眼）、4级红；层级越高越突出，与底部浪型区对应。"""
+    key = {1: "path", 2: "path2", 3: "fib", 4: "up"}.get(_label_level(lb), "path")
+    return t[key]
+
+
 def _seg_direction(plot_df, s, e):
     """段方向判定（R20 极端价位口径）：终点 high/low 均高于起点 → 上行（True），
     均低于起点 → 下行（False），区间重叠时回退收盘价比较。
@@ -144,7 +157,7 @@ def _draw_candles(ax, df, last_n=None, t=THEMES["dark"]):
 def draw_chart(df, out_path, title, waves, invalids, current_price=None,
                fib_zones=None, last_n=None, levels=None, font_scale=1.0,
                gann_fans=None, theme="dark", paths=None, channels=None,
-               pivots=None):
+               pivots=None, start=None):
     """绘制单方案 K 线图并保存 PNG。
 
     waves: [(label, start_idx, end_idx, form_note, direction), ...]
@@ -155,7 +168,7 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
     gann_fans: [(anchor_idx, anchor_price, scale, direction), ...]
         # 江恩角度线扇形（青绿色）；scale = 每根 K 线 1 单位价格（刻度按项目默认口径 D23 分档），
         # direction: "up"（低点出发向上，默认）/ "down"（高点出发向下）
-    font_scale: 字号缩放（放大图建议 1.2–1.4，保证子浪标注清晰）
+    font_scale: 字号缩放（全景图子浪标注建议 1.2–1.4，保证缩放后子浪清晰）
     theme: "dark"（默认）/ "light"。深色画布下蜡烛与连线改用亮色系。
     paths: [([idx_a, idx_b, ...], labels), ...]  # 连续浪路径：按索引顺序把端点
         # 连成一条带箭头折线（亮色，线宽 0.9px 半透明；最后一段未走完为灰虚线），
@@ -166,7 +179,12 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
         # 连接 1 浪高点(idx1_hi) 与 3 浪高点(idx3_hi) 的直线为上轨，
         # 过 2 浪低点(idx2_low) 画与上轨平行的下轨。
     """
-    plot_df = df.tail(last_n) if last_n is not None else df
+    # 观察窗口：--start 定左界（起画点，原始 CSV 行号），--last 定尾部根数；start 在 last 前应用
+    plot_df = df
+    if start is not None:
+        plot_df = plot_df.iloc[start:]
+    if last_n is not None:
+        plot_df = plot_df.tail(last_n)
     base = len(df) - len(plot_df)  # 索引偏移（浪段索引基于全量 CSV 行号）
 
     t = THEMES.get(theme, THEMES["dark"])
@@ -201,6 +219,16 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
     sub_rows = []
     if paths:
         sub_rows = _draw_paths(ax, plot_df, base, paths, t, fs)
+        # 起画点校验（硬性）：至少一条路径的起点即起画点(start，原始 CSV 行号)；叠加子浪路径允许起点偏右
+        # 但不越出窗口左界。防止"从数据起点/中途起画"，同时不误伤多级叠加（子浪起点晚于主路径起点）。
+        if start is not None:
+            touched = any(idxs and idxs[0] == start for idxs, _l in paths)
+            for idxs, labels in paths:
+                if idxs and (idxs[0] - base) < 0:
+                    print(f"[警告] 起画点校验：{labels[0]} 存在早于窗口左界的端点，已跳过", file=sys.stderr)
+            if not touched:
+                print("[警告] 起画点校验：没有路径从起画点(第1浪起点)开始，白线可能从数据起点/中途起画",
+                      file=sys.stderr)
     # 原有的每段浪标注（兼容旧调用；与 paths 可并存）
     for label, s0, e0, note, direction in waves:
         s = s0 - base
@@ -262,8 +290,12 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
         legend_lines.append((t["channel"], "青色虚线", "平行通道：下轨=过[2]低点平行"))
     _draw_level_legend(ax_legend, plot_df, legend_lines, t, fs)
 
-    # 3b) 红框：浪型序列 —— 大级别([I][II][III])放左列、子浪([0..5]+当前)放右列，两列并排
-    sub_seq = [(label, price, date) for (label, price, date, _x) in sub_rows]
+    # 3b) 浪型区：按层级分多块（大级别 / 2级 / 3级…），层级越高颜色越显眼（与线上颜色一致）
+    #     块1=大级别（pivot [I][II] 等 + 单数字 1 级子浪）；块2+ = 多级子浪（1-1、1-1-1 按连字符段数分级）
+    sub_groups = {}
+    for label, price, date, _x in sub_rows:
+        lvl = _label_level(label)
+        sub_groups.setdefault(lvl, []).append((label, price, date))
     # 大级别价格/日期从 pivot 索引实时取
     big_seq = []
     for item in pivots or []:
@@ -276,10 +308,10 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
             ds = plot_df.index[gip].strftime("%Y-%m-%d")
             big_seq.append((big, _fmt_price(yv), ds))
     if current_price is not None:
-        sub_seq.append(("当前", _fmt_price(current_price),
-                        plot_df.index[-1].strftime("%Y-%m-%d")))
-    # 浪型区：大浪左列、小浪右列，各自独立行距（互不干涉），第一行 y 统一 _BOTTOM_Y0
-    _draw_wave_legend(ax_waves, big_seq, sub_seq, t, fs)
+        sub_groups.setdefault(1, []).append(("当前", _fmt_price(current_price),
+                                             plot_df.index[-1].strftime("%Y-%m-%d")))
+    # 浪型区：大级别块 + 逐级子浪块（多列并排，第一行 y 统一 _BOTTOM_Y0）
+    _draw_wave_legend(ax_waves, big_seq, sub_groups, t, fs)
 
     # 比率目标区：浅色区间（只画区间，不放文字到 K 线旁，底部已说明）
     if fib_zones:
@@ -328,6 +360,8 @@ def _draw_paths(ax, plot_df, base, paths, t, fs):
     sub_rows = []  # [(label, price, date, x)] 有序子浪端点序列
     for idxs, labels in paths:
         auto_seq = len(labels) == 1
+        # 层级色：按该路径首标签的层级取色（多级子浪叠加用颜色区分）
+        c = _level_color(labels[0], t)
         # 第一遍：过滤越界点，只留有效端点（峰谷判定依赖相邻有效端点，不能带洞）
         valid = []
         for i, idx in enumerate(idxs):
@@ -366,7 +400,7 @@ def _draw_paths(ax, plot_df, base, paths, t, fs):
         # 0..last_labeled 段为实线（已确认），last_labeled 之后画虚线
         if last_labeled >= 0:
             # 实线段：从第 0 点画到 last_labeled 点
-            ax.plot(xs[:last_labeled + 1], ys[:last_labeled + 1], color=t["path"],
+            ax.plot(xs[:last_labeled + 1], ys[:last_labeled + 1], color=c,
                     linewidth=0.9, alpha=0.6, zorder=5,
                     marker=None, solid_capstyle="round", solid_joinstyle="round")
             # 虚线段：从 last_labeled 点画到路径末端（未走完/延伸段）
@@ -375,7 +409,7 @@ def _draw_paths(ax, plot_df, base, paths, t, fs):
                         linewidth=0.9, linestyle="--", alpha=0.8, zorder=5)
         # 每段末端加箭头（实线段用路径色，虚线段用灰）
         for k in range(len(pts) - 1):
-            seg = t["note"] if k >= last_labeled else t["path"]
+            seg = t["note"] if k >= last_labeled else c
             ax.annotate("", xy=(xs[k + 1], ys[k + 1]), xytext=(xs[k], ys[k]),
                         arrowprops=dict(arrowstyle="-|>", color=seg,
                                         lw=0.9, shrinkA=0, shrinkB=0),
@@ -447,38 +481,44 @@ def _draw_level_legend(ax, plot_df, lines, t, fs):
     return
 
 
-def _draw_wave_legend(ax, big_seq, sub_seq, t, fs):
-    """右块（浪型）：大浪点位左列 + 小浪点位右列，双列并排。
+def _draw_wave_legend(ax, big_seq, sub_groups, t, fs):
+    """右块（浪型）：按层级分多个文本块并排——块1 大级别([I][II]等 + 1级子浪)，
+    块2+ 为多级子浪(1-1、1-1-1 按连字符段数分 2级/3级…)，颜色与对应层级连线一致。
 
-        [I]: 1111, 2020.1.1      [0]: 1111, 2020.1.1
-        [II]: 3333, 2023.2.2     [1]: 2222, 2020.2.2
-        [III]: 5555, 2023.5.5    ...
+        [大级别]         [2级]            [3级]
+        [I]: 1111, 2020    1-1: 1200, 2021  1-1-1: 1180, 2021.3
+        [II]: 3333, 2023   1-2:  900, 2022  1-1-2: 1250, 2021.4
 
-    big_seq: [(label, price, date), ...] 大级别浪（[I][II][III]…）→ 左列
-    sub_seq: [(label, price, date), ...] 子浪（[0]..[5]/当前）→ 右列
-    两列第一行 y=_BOTTOM_Y0（与左块对齐），统一行距(_BOTTOM_ROW_H)与字号(_BOTTOM_FS)，
-    不再各自算行距——小浪行数多只在自身列内向下排，不与其它列相互挤压。
+    big_seq: [(label, price, date), ...] 大级别浪（[I][II][III]…）
+    sub_groups: {level: [(label, price, date), ...]} 按层级分组（level=连字符段数+1）
+    每列顶部一块标题（大级别/2级/3级…），下列该级终点；列均分，行统一行距。
     """
-    if not big_seq and not sub_seq:
+    if not big_seq and not sub_groups:
         ax.axis("off")
         return
+    cols = [("大级别", list(big_seq) + list(sub_groups.get(1, [])))]
+    # 底部浪型区只列 第 1 层(大级别) + 第 2 层 子浪；第 3 层及更深(1-1-1…)仅画线、不进底部文本（避免图过高）
+    for lvl in sorted(k for k in sub_groups if k == 2):
+        cols.append(("%d级" % lvl, sub_groups[lvl]))
+    n = len(cols)
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
-    # 左列：大浪（与左块同字号/行距/字号）
-    for i, (lb, pr, dt) in enumerate(big_seq):
-        y = _BOTTOM_Y0 - i * _BOTTOM_ROW_H
-        ax.text(0.03, y, f"{lb}: {pr}, {_dot_fmt(dt)}", color=t["text"],
-                fontsize=_BOTTOM_FS * fs, ha="left", va="center", zorder=8,
-                bbox=dict(boxstyle="round,pad=0.1", fc=t["label_fc"],
-                          ec=t["frame"], alpha=0.9, lw=0.6))
-    # 右列：小浪（与左块同字号/行距/字号；行数多仅在本列内延伸）
-    for i, (lb, pr, dt) in enumerate(sub_seq):
-        y = _BOTTOM_Y0 - i * _BOTTOM_ROW_H
-        ax.text(0.52, y, f"{lb}: {pr}, {_dot_fmt(dt)}", color=t["text"],
-                fontsize=_BOTTOM_FS * fs, ha="left", va="center", zorder=8,
-                bbox=dict(boxstyle="round,pad=0.1", fc=t["label_fc"],
-                          ec=t["frame"], alpha=0.9, lw=0.6))
+    xw = 0.94 / max(1, n)
+    for ci, (title, rows) in enumerate(cols):
+        x0 = 0.03 + ci * xw
+        # 块标题（每列顶部，小字渐隐）
+        ax.text(x0, min(0.99, _BOTTOM_Y0 + _BOTTOM_ROW_H * 0.40), title,
+                color=t["note"], fontsize=_BOTTOM_FS * fs * 0.85,
+                ha="left", va="center", zorder=8)
+        # 该级终点（数据行）
+        for i, (lb, pr, dt) in enumerate(rows):
+            y = _BOTTOM_Y0 - i * _BOTTOM_ROW_H
+            col = t["text"] if lb == "当前" else _level_color(lb, t)
+            ax.text(x0, y, f"{lb}: {pr}, {_dot_fmt(dt)}", color=col,
+                    fontsize=_BOTTOM_FS * fs, ha="left", va="center", zorder=8,
+                    bbox=dict(boxstyle="round,pad=0.1", fc=t["label_fc"],
+                              ec=t["frame"], alpha=0.9, lw=0.6))
     return
 
 
@@ -628,7 +668,7 @@ def main():
     p.add_argument("--out", default=None, help="输出 PNG 路径（与 --out-auto 二选一）")
     p.add_argument("--out-auto", default=None, metavar="DIR|方案|图型",
                    help="按 embed_report_images.py 固定命名权威自动生成输出路径："
-                        "目录|方案|图型（方案∈{主方案,替代方案}，图型∈{全景,放大}），"
+                        "目录|方案|图型（方案∈{主方案,替代方案}，图型∈{全景}——每方案一张全景图），"
                         "如 --out-auto \"C:/x/图表|主方案|全景\" → DIR/主方案_全景.png；"
                         "与 --out 互斥，命名约定单一出处，禁止手工另起名")
     p.add_argument("--title", required=True, help="图标题（含分析级别与方案名）")
@@ -644,6 +684,10 @@ def main():
     p.add_argument("--fib", nargs="*", type=parse_fib_arg, default=[],
                    help="斐波那契目标区：低:高:标签")
     p.add_argument("--last", type=int, default=None, help="只绘制最近 N 根 K 线")
+    p.add_argument("--start", default=None, metavar="INDEX|YYYY-MM-DD",
+                   help="观察窗口左界（起画点）：数值=原始 CSV 行号，或日期 YYYY-MM-DD；"
+                        "全景图传该方案最大分析级别标注结构的第 1 浪起点；"
+                        "强制 X 轴从该点起画；与 --path 同用触发首端点贴起点校验，禁止从数据起点或中途起画")
     p.add_argument("--gann", nargs="*", default=[], metavar="FAN",
                    help="江恩角度线扇形（可选叠加）：起点索引:起点价格[:刻度][:方向up/down]；"
                         "刻度 = 每根 K 线 1 单位价格（分档见项目默认口径 D23），须披露")
@@ -653,12 +697,14 @@ def main():
     p.add_argument("--gann-index", action="store_true",
                    help="标的为指数点位：--gann-auto-scale 时分档固定取 50（D23）")
     p.add_argument("--font-scale", type=float, default=1.0,
-                   help="字号缩放（放大图建议 1.2–1.4）")
+                   help="字号缩放（全景图子浪标注建议 1.2–1.4）")
     p.add_argument("--theme", default="dark", choices=("dark", "light"),
                    help="主题：dark（默认，深色画布亮色连线）/ light（旧浅色）")
-    p.add_argument("--path", nargs="*", type=parse_path_arg, default=[],
-                   help="连续浪路径：标签:索引:索引:...（按序连成一条带箭头折线，"
-                        "端点加编号框）。例：--path \"[1]:4165:4174:4178:4223:4295:4484\"")
+    p.add_argument("--path", action="append", type=parse_path_arg, default=[],
+                   help="连续浪路径：框标@索引,... 或 标签:索引:索引:...（按序连成一条带箭头折线，"
+                        "端点加编号框）。可多次传入叠加不同层级子浪（如 1-1、1-1-1），"
+                        "层级颜色由框标的连字符段数区分（1→白、1-1→青、1-1-1→橙）。"
+                        "例：--path \"1-1@339,1-2@465\" --path \"1-1-1@360,1-1-2@400\"")
     p.add_argument("--channel", nargs="*", type=parse_channel_arg, default=[],
                    help="推动浪平行通道：1浪高点索引:3浪高点索引:2浪低点索引。"
                         "例：--channel \"4174:4223:4178\"")
@@ -674,7 +720,7 @@ def main():
             p.error("--out 与 --out-auto 只能二选一")
         parts = args.out_auto.split("|")
         if len(parts) != 3 or parts[1] not in SCHEME_NAMES or parts[2] not in CHART_VIEWS:
-            p.error('--out-auto 格式应为 "目录|主方案|全景"（方案∈{主方案,替代方案}，图型∈{全景,放大}），'
+            p.error('--out-auto 格式应为 "目录|主方案|全景"（方案∈{主方案,替代方案}，图型∈{全景}——每方案一张全景图），'
                     "收到: %s" % args.out_auto)
         out_path = os.path.join(parts[0], chart_png(parts[1], parts[2]))
     elif args.out:
@@ -683,6 +729,20 @@ def main():
         p.error("必须提供 --out 或 --out-auto 之一")
 
     df = load_ohlc(args.csv, set_date_index=True)
+
+    # --start 起画点（原始 CSV 行号）：数值直接取行号；日期须为数据内交易日，精确匹配（起画点应为 swings 端点所在日）
+    start_idx = None
+    if args.start:
+        if args.start.isdigit():
+            start_idx = int(args.start)
+        else:
+            pos = df.index.get_indexer([pd.Timestamp(args.start)])
+            if pos[0] >= 0:
+                start_idx = int(pos[0])
+            else:
+                raise SystemExit(f"[错误] --start 起画点日期不在数据内: {args.start}")
+        if start_idx < 0 or start_idx >= len(df):
+            raise SystemExit(f"[错误] --start 起画点越界: {start_idx}（数据共 {len(df)} 根）")
 
     # 江恩扇形：auto 模式统一按第一个锚点价格分档（D23 同一分析内禁止换刻度）
     gann_fans = []
@@ -706,7 +766,7 @@ def main():
                current_price=args.current, fib_zones=args.fib, last_n=args.last,
                levels=args.level, font_scale=args.font_scale,
                gann_fans=gann_fans, theme=args.theme, paths=args.path,
-               channels=args.channel, pivots=args.pivot)
+               channels=args.channel, pivots=args.pivot, start=start_idx)
 
 
 if __name__ == "__main__":

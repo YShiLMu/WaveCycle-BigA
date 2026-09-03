@@ -1,31 +1,29 @@
 # -*- coding: utf-8 -*-
 """交付文档与图表的标准命名权威（单一出处）。
 
-被 init_archive / gen_report / embed_report_images / ew_chart --out-auto /
+被 init_archive / gen_report_md / gen_report_web / embed_report_images / ew_chart --out-auto /
 smoke_test 共用；各脚本禁止再另写文件名名单、占位符名单或名称校验。
 """
 import re
 
-# 4 张标准浪型图（embed_report_images 定位图表/ 目录用；ew_chart --out-auto 同源）
+# 2 张标准浪型图（embed_report_images 定位图表/ 目录用；ew_chart --out-auto 同源）
 IMAGE_KEYS = (
     ("主方案全景", "主方案_全景.png"),
-    ("主方案放大", "主方案_放大.png"),
     ("替代方案全景", "替代方案_全景.png"),
-    ("替代方案放大", "替代方案_放大.png"),
 )
 IMAGE_FILENAMES = tuple(fn for _key, fn in IMAGE_KEYS)
-# md 图片引用校验用（带 图表/ 目录前缀，gen_report --md 模式）
+# md 图片引用列表（带 图表/ 目录前缀；embed_report_images 与 md 自包含校验用）
 CHART_IMAGE_PATHS = tuple("图表/" + fn for fn in IMAGE_FILENAMES)
 
 # 网页占位符：键名 + "图路径"（如 主方案全景 → {{主方案全景图路径}}）
 HTML_TOKENS = {key: "{{%s图路径}}" % key for key, _fn in IMAGE_KEYS}
 IMAGE_PLACEHOLDERS = {token.strip("{}") for token in HTML_TOKENS.values()}
 
-# ew_chart --out-auto 的方案与图型取值
+# ew_chart --out-auto 的方案与图型取值（每方案一张全景图，无放大图）
 SCHEME_NAMES = ("主方案", "替代方案")
-CHART_VIEWS = ("全景", "放大")
+CHART_VIEWS = ("全景",)
 
-# 交付文档名模板（init_archive 创建、gen_report 校验打印）
+# 交付文档名模板（init_archive 创建、gen_report_md/gen_report_web 打印）
 REPORT_MD_TPL = "分析报告_%s_%s_%s.md"
 WEB_HTML_TPL = "网页报告_%s_%s_%s.html"
 

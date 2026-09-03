@@ -6,16 +6,16 @@
     python embed_report_images.py <分析输出文件夹> [--md-keep-absolute]
 
 流程:
-    1. 定位 图表/ 下 PNG：标准模式 4 张（主方案/替代方案 × 全景/放大）；
-       单方案防御模式 2 张（仅主方案 × 全景/放大，替代方案两张必须同时缺失，
+    1. 定位 图表/ 下 PNG：标准模式 2 张（主方案全景 + 替代方案全景，见 naming.IMAGE_KEYS/CHART_VIEWS 单一出处）；
+       单方案防御模式 1 张（仅主方案全景，替代方案缺失时其图区标记"不适用"），
        只缺一张判错退出）;
     2. 定位 分析报告_*.md 与 网页报告_*.html;
     3. md：把 ![说明](...主方案_全景.png) 等图片链接替换为 base64 data URI
        （--md-keep-absolute 时保留绝对路径、保留 图表/ 目录并在文末注明回退原因）;
-    4. html：把 {{主方案全景图路径}} 等 4 个占位符替换为 base64 data URI；
+    4. html：把 {{主方案全景图路径}} 等 2 个占位符替换为 base64 data URI；
        单方案防御模式时，替代方案图区 <img> 删除、提示改为"不适用";
     5. 校验：html 内 data:image/png;base64, 数量 == <img class="pano-img"> 数量
-       == 实际图片数（4 或 2）；md 图片标记数量 == 实际图片数；html 必须保留模板
+       == 实际图片数（2 或 1）；md 图片标记数量 == 实际图片数；html 必须保留模板
        头部特征注释（"波浪理论网页报告模板"）；任一不通过则以退出码 1 结束，
        禁止交付缺图文件。
 """
@@ -24,6 +24,7 @@ import argparse
 import base64
 import pathlib
 import re
+import shutil
 import sys
 
 from naming import HTML_TOKENS, IMAGE_KEYS
@@ -40,16 +41,10 @@ def locate_assets(folder: pathlib.Path):
         p = chart / filename
         if p.is_file():
             images[key] = p
-    # 主方案两张必备；替代方案两张必须成对（全有 = 标准 4 图，全无 = 单方案防御 2 图）
-    for key, filename in IMAGE_KEYS[:2]:
-        if key not in images:
-            raise SystemExit(f"[错误] 缺少主方案图表文件：{chart / filename}")
-    alt_missing = [k for k, _ in IMAGE_KEYS[2:] if k not in images]
-    if len(alt_missing) == 1:
-        filename = dict(IMAGE_KEYS)[alt_missing[0]]
-        raise SystemExit(
-            f"[错误] 替代方案图表不成对：缺 {chart / filename}"
-            f"（标准模式应 4 张齐全；单方案防御模式应仅主方案 2 张）")
+    # 主方案全景必备；替代方案全景可选（有 = 标准 2 张；无 = 单方案防御 1 张）
+    for key, filename in IMAGE_KEYS:
+        if key not in images and key == "主方案全景":
+            raise SystemExit(f"[错误] 缺少主方案全景图：{chart / filename}")
     mds = sorted(folder.glob("分析报告_*.md"))
     htmls = sorted(folder.glob("网页报告_*.html"))
     if len(mds) != 1:
@@ -104,7 +99,7 @@ def embed_html(html_path: pathlib.Path, images):
 
 
 def validate(md_text: str, html_text: str, images, keep_absolute: bool):
-    expected = len(images)  # 标准模式 4 张；单方案防御模式 2 张
+    expected = len(images)  # 标准模式 2 张；单方案防御模式 1 张（见 naming.IMAGE_KEYS）
     html_imgs = len(re.findall(r'<img class="pano-img"', html_text))
     html_uris = html_text.count("data:image/png;base64,")
     if "波浪理论网页报告模板" not in html_text:
@@ -116,7 +111,7 @@ def validate(md_text: str, html_text: str, images, keep_absolute: bool):
     if html_imgs != expected:
         raise SystemExit(
             f"[校验失败] html <img> 数量 {html_imgs} ≠ 实际图表 {expected} 张"
-            f"（标准模式 4 张；单方案防御模式 2 张且替代方案图区应标记不适用）")
+            f"（标准模式 2 张；单方案防御模式 1 张且替代方案图区应标记不适用）")
     for token in HTML_TOKENS.values():
         if token in html_text:
             raise SystemExit(f"[校验失败] html 仍含未替换占位符：{token}")
@@ -157,6 +152,14 @@ def main():
     print(f"[完成] 已内嵌 {len(images)} 张图（{mode}）：")
     print(f"  md  : {md_path}")
     print(f"  html: {html_path}")
+
+    # 浪型图 PNG 为临时产物：注入完成后清除（交付只留 md+html 两份文档）。
+    # --md-keep-absolute 回退时保留（md 用绝对路径引用 图表/，需目录存在）。
+    if not args.md_keep_absolute:
+        chart_dir = folder / "图表"
+        if chart_dir.exists():
+            shutil.rmtree(chart_dir)
+            print(f"[清理] 已删除临时图表目录：{chart_dir}")
 
 
 if __name__ == "__main__":

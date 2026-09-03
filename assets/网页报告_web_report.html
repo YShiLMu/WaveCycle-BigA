@@ -3,23 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{标的名称}} · Elliott Wave 分析报告</title>
+<title>{{标的名称}}（{{标的代码}}）· Elliott Wave 分析报告</title>
 <!--
-  波浪理论网页报告模板（可复用）
-  使用方式：本模板用于**直接填充**——复制本文件后，将全部 {{字段名}} 替换为本次分析数据，
-  图区图片由生成流程自动内嵌 base64（scripts/embed_report_images.py），请勿手工填写路径；
-  禁止从零重写 HTML 结构（结构与 JS 保持模板原样，只替换数据；图片占位符由脚本替换）。
-  交付物规范：本网页与分析报告.md 是每次分析仅有的两件交付文档（归档于 <项目根目录>/分析输出/<标的名称_代码_YYYYMMDD_HHMM>/）；
-  交易计划/失效价位/更新与跟踪以章节内嵌于两文档，不生成独立的交易计划.md、失效追踪.md、变更日志.md 与日线 CSV；
-  浪型图 PNG 仅存于 图表/ 子目录作内嵌素材（生成后转 base64 内嵌，本网页自包含），不计为交付物；两份文档内容必须一致。
-  引用规范：见 references/rules.md R19/R20/R22/R23/R24、references/guidelines.md G21、references/guidelines.md 前言；术语与规则不得在此重新定义。
+  波浪理论网页报告模板（正文骨架版，可复用）
+  使用方式：复制本文件由 gen_report_web.py 渲染——data.json 提供结构化数据（文本字段直接替换；
+  {{表名}} 占位符由脚本按固定列头生成表格行——AI 只给纯数据，不写 HTML/表格）。
+  图区图片由 embed_report_images.py 注入 base64；禁止从零重写 HTML 结构与 JS。
+  变更：去放大图，每方案一张全景（主/替代）；图位固定在「3 替代方案 → 4 概率排序」之间。
+  引用规范：见 references/rules.md R19/R20/R22/R23/R24、references/guidelines.md G21；术语与规则不得在此重新定义。
 -->
 <style>
   :root { --main: #1a5276; --accent: #d32f2f; --bg: #f7f8fa; --card: #ffffff; --line: #e3e6ea; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
          background: var(--bg); color: #222; line-height: 1.7; }
-  /* 宽屏容器：1400px 消除左右大片空白；移动端 100% + padding */
   .container { max-width: 1400px; margin: 0 auto; padding: 14px 20px; }
   header { background: var(--main); color: #fff; border-radius: 10px; padding: 12px 20px; }
   header h1 { font-size: 1.25rem; margin-bottom: 2px; }
@@ -36,15 +33,11 @@
   .tab-btn.active { background: var(--main); color: #fff; border-color: var(--main); }
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
-
-  /* 工具条：位于查看器外部上方，不覆盖图表内容 */
   .toolbar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 6px; }
   .toolbar span, .toolbar button { background: #fff; border: 1px solid var(--line);
                                    border-radius: 6px; padding: 2px 8px; font-size: .8rem; }
   .toolbar button { cursor: pointer; }
   .toolbar button:hover { background: #eef3f8; }
-
-  /* 交互图查看器：高度由 JS 按图片宽高比自适应，移动端保留 min-height */
   .viewer { position: relative; border: 1px solid var(--line); border-radius: 8px;
             overflow: hidden; background: #fff; }
   .viewport { position: relative; width: 100%; min-height: 320px; overflow: hidden;
@@ -60,9 +53,6 @@
   table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: .9rem; }
   th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
   th { background: #eef3f8; }
-  .summary { background: #fdf6ec; }
-  .summary p { margin: 4px 0; }
-  .summary strong { color: var(--main); }
   footer { margin-top: 12px; font-size: .8rem; color: #777; text-align: center; }
   @media (max-width: 600px) {
     .container { padding: 10px 12px; }
@@ -75,26 +65,35 @@
 <body>
 <div class="container">
 
-  <!-- 页头：标的、分析日期、分析级别（references/rules.md R22）、收盘价 -->
   <header>
     <h1>{{标的名称}}（{{标的代码}}）· Elliott Wave 分析</h1>
     <div class="meta">
       <span>分析日期：{{分析日期}}</span>
-      <span>分析级别：{{分析级别}}</span>  <!-- 必须声明级别，见 references/rules.md R22 -->
+      <span>分析级别：{{分析级别}}</span>
       <span>收盘价：{{收盘价}}</span>
     </div>
   </header>
 
-  <!-- 简明分析说明：3–5 段，禁止长篇展开 -->
-  <section>
-    <h2>简明分析说明</h2>
-    <p><strong>核心判断：</strong>{{核心判断}}</p>
-    <p><strong>当前关键形态：</strong>{{当前关键形态}}</p>
-    <p><strong>备选方案：</strong>{{备选方案}}</p>
-    <p><strong>概率与仓位：</strong>{{概率与仓位}}</p>  <!-- 概率表述用"大概率/倾向于/通常"，禁止"必然/一定/绝对"，见 references/guidelines.md 前言；字段开头标注共振状态（三共振/双共振/单信号/背离，references/guidelines.md G26），仓位含闸门结果（references/guidelines.md G27） -->
+  <section><h2>简明分析说明</h2>
+    <p>{{简明分析说明}}</p>
   </section>
 
-  <!-- 浪型图区：每个方案两张图（全景 + 放大），各带独立交互查看器；图片缺失时显示占位提示 -->
+  <section><h2>1. 分析前提</h2>
+    {{分析前提表}}
+  </section>
+
+  <section><h2>2. 主方案</h2>
+    <p>{{主方案说明}}</p>
+    {{主方案数浪表}}
+    <h3>Neely 新增参考</h3>
+    {{neely参考表}}
+    <p>{{主方案失效}}</p>
+  </section>
+
+  <section><h2>3. 替代方案</h2>
+    <p>{{替代方案}}</p>
+  </section>
+
   <section>
     <h2>浪型标注图</h2>
     <div class="tabs">
@@ -102,7 +101,7 @@
       <button class="tab-btn" onclick="showTab('alt', this)">替代方案</button>
     </div>
     <div id="panel-main" class="tab-panel active">
-      <h3>全景图（{{数据范围}}）——大级别结构</h3>
+      <h3>全景图（大级别结构，从 1 浪起）——滚轮缩放可看子浪</h3>
       <div class="toolbar" id="toolbar-main-pano">
         <span class="zoom-label" id="zoom-label-main-pano">×1.0</span>
         <button type="button" onclick="changeSpeed('main-pano',-1)">−</button>
@@ -110,35 +109,13 @@
         <button type="button" onclick="changeSpeed('main-pano',1)">＋</button>
         <button type="button" onclick="resetView('main-pano')">复位</button>
       </div>
-      <div class="viewer">
-        <div class="viewport" id="viewport-main-pano">
-          <!-- 图片由 embed_report_images.py 自动内嵌 base64，请勿手工填写 -->
-          <img class="pano-img" draggable="false" src="{{主方案全景图路径}}" alt="主方案全景图"
-               onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-          <div class="img-missing">主方案全景图缺失：请检查 {{主方案全景图路径}} 是否存在。</div>
-        </div>
-        <div class="hint">滚轮缩放 · 放大后可拖拽平移（×1.0 时不可平移属正常）· 双击复位</div>
+      <div class="viewer"><div class="viewport" id="viewport-main-pano">
+        <img class="pano-img" draggable="false" src="{{主方案全景图路径}}" alt="主方案全景图">
       </div>
-      <h3>放大图（{{放大图数据范围}}）——子浪细节</h3>
-      <div class="toolbar" id="toolbar-main-zoom">
-        <span class="zoom-label" id="zoom-label-main-zoom">×1.0</span>
-        <button type="button" onclick="changeSpeed('main-zoom',-1)">−</button>
-        <span class="speed-label" id="speed-label-main-zoom">拖速×1</span>
-        <button type="button" onclick="changeSpeed('main-zoom',1)">＋</button>
-        <button type="button" onclick="resetView('main-zoom')">复位</button>
-      </div>
-      <div class="viewer">
-        <div class="viewport" id="viewport-main-zoom">
-          <!-- 图片由 embed_report_images.py 自动内嵌 base64，请勿手工填写 -->
-          <img class="pano-img" draggable="false" src="{{主方案放大图路径}}" alt="主方案放大图"
-               onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-          <div class="img-missing">主方案放大图缺失：请检查 {{主方案放大图路径}} 是否存在。</div>
-        </div>
-        <div class="hint">滚轮缩放 · 放大后可拖拽平移（×1.0 时不可平移属正常）· 双击复位</div>
-      </div>
+      <div class="hint">滚轮缩放 · 放大后可拖拽平移 · 双击复位</div></div>
     </div>
     <div id="panel-alt" class="tab-panel">
-      <h3>全景图（{{数据范围}}）——大级别结构</h3>
+      <h3>全景图（替代方案，从 1 浪起）</h3>
       <div class="toolbar" id="toolbar-alt-pano">
         <span class="zoom-label" id="zoom-label-alt-pano">×1.0</span>
         <button type="button" onclick="changeSpeed('alt-pano',-1)">−</button>
@@ -146,67 +123,35 @@
         <button type="button" onclick="changeSpeed('alt-pano',1)">＋</button>
         <button type="button" onclick="resetView('alt-pano')">复位</button>
       </div>
-      <div class="viewer">
-        <div class="viewport" id="viewport-alt-pano">
-          <!-- 替代方案存在时必须有此图（references/rules.md R24）；内嵌由脚本自动完成 -->
-          <img class="pano-img" draggable="false" src="{{替代方案全景图路径}}" alt="替代方案全景图"
-               onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-          <div class="img-missing">替代方案全景图缺失：请检查 {{替代方案全景图路径}} 是否存在。</div>
-        </div>
-        <div class="hint">滚轮缩放 · 放大后可拖拽平移（×1.0 时不可平移属正常）· 双击复位</div>
+      <div class="viewer"><div class="viewport" id="viewport-alt-pano">
+        <img class="pano-img" draggable="false" src="{{替代方案全景图路径}}" alt="替代方案全景图">
       </div>
-      <h3>放大图（{{放大图数据范围}}）——子浪细节</h3>
-      <div class="toolbar" id="toolbar-alt-zoom">
-        <span class="zoom-label" id="zoom-label-alt-zoom">×1.0</span>
-        <button type="button" onclick="changeSpeed('alt-zoom',-1)">−</button>
-        <span class="speed-label" id="speed-label-alt-zoom">拖速×1</span>
-        <button type="button" onclick="changeSpeed('alt-zoom',1)">＋</button>
-        <button type="button" onclick="resetView('alt-zoom')">复位</button>
-      </div>
-      <div class="viewer">
-        <div class="viewport" id="viewport-alt-zoom">
-          <!-- 图片由 embed_report_images.py 自动内嵌 base64，请勿手工填写 -->
-          <img class="pano-img" draggable="false" src="{{替代方案放大图路径}}" alt="替代方案放大图"
-               onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-          <div class="img-missing">替代方案放大图缺失：请检查 {{替代方案放大图路径}} 是否存在。</div>
-        </div>
-        <div class="hint">滚轮缩放 · 放大后可拖拽平移（×1.0 时不可平移属正常）· 双击复位</div>
-      </div>
+      <div class="hint">滚轮缩放 · 放大后可拖拽平移 · 双击复位</div></div>
     </div>
-    <p style="font-size:.85rem;color:#777;margin-top:6px;">
-      默认每个方案两张图（全景 + 放大，共 4 张）；仅 1 个合法方案时防御性 2 张（主方案全景 + 放大）；
-      第 3 个方案只文字呈现不出图；每张图只画一个方案（避免混用标注，references/rules.md R23）；
-      图标题含分析级别与时间范围（references/rules.md R22）；失效价位为红色虚线并注明规则编号（references/rules.md R19、R20）。
-      全景图标大级别结构与大级别失效位，放大图标子浪细节与近期失效位；拖拽均为 1:1 跟手。
-    </p>
   </section>
 
-  <!-- 关键价位表 -->
-  <section>
-    <h2>关键价位</h2>
-    <table>
-      <thead><tr><th>类型</th><th>价位</th><th>说明</th></tr></thead>
-      <tbody>
-        <tr><td>上方突破观察</td><td>{{上方突破观察价位}}</td><td>{{上方突破观察说明}}</td></tr>
-        <tr><td>下方防守</td><td>{{下方防守价位}}</td><td>{{下方防守说明}}</td></tr>
-        <tr><td>纪律止损</td><td>{{纪律止损价位}}</td><td>{{纪律止损说明}}</td></tr>
-      </tbody>
-    </table>
+  <section><h2>4. 概率排序与理由</h2>
+    <p>{{概率说明}}</p>
+    {{八因子表}}
+    <p>{{概率结论}}</p>
   </section>
 
-  <!-- 简洁总结：放在页面末尾，严格按范例格式，每字段 1–3 句话 -->
-  <section class="summary">
-    <h2>简洁总结</h2>
-    <p><strong>标的【{{标的代码}}】（{{标的名称}}），截至 {{分析日期}} 收盘 {{收盘价}}。</strong></p>
-    <p><strong>核心判断：</strong>{{总结核心判断}}</p>
-    <p><strong>当前关键形态：</strong>{{总结当前关键形态}}</p>
-    <p><strong>备选方案：</strong>{{总结备选方案}}</p>
-    <p><strong>概率与仓位：</strong>{{总结概率与仓位}}</p>
-    <p><strong>关键价位：</strong>{{总结关键价位}}</p>
-    <p><strong>近期交易计划：</strong>{{总结近期交易计划}}</p>  <!-- 填写口径：近期到 X 价位（支撑/回撤/共振位 + 蜡烛图触发三闸门，references/candlestick.md第 7 节）可买入；跌破 Y 价位（波浪失效价位）代表形态失效成立、切换备选方案 -->
+  <section><h2>5. 失效价位清单</h2>
+    {{失效价位表}}
   </section>
 
-  <!-- 页脚：数据来源、生成时间、免责声明 -->
+  <section><h2>6. 交易计划建议</h2>
+    <p>{{交易计划}}</p>
+  </section>
+
+  <section><h2>7. 风险提示</h2>
+    <p>{{风险提示}}</p>
+  </section>
+
+  <section><h2>8. 更新与跟踪</h2>
+    <p>{{更新跟踪}}</p>
+  </section>
+
   <footer>
     <p>数据来源：{{数据来源}} ｜ 生成时间：{{生成时间}}</p>
     <p>仅供学习研究，不构成投资建议。</p>
@@ -214,13 +159,8 @@
 
 </div>
 <script>
-  // 交互图查看器：原生 JS + CSS transform（scale + translate），不依赖外部库
-  // 事件层：img draggable=false + pointerdown preventDefault + dragstart 双保险；
-  // 无 PointerEvent 时回退 mousedown/mousemove/mouseup；setPointerCapture 失败时改在 window 上监听。
-  // 查看器高度随图片宽高比自适应（min-height 320px），尺寸缓存在 load/resize 时刷新。
   var viewers = {};
   var SPEED_OPTIONS = [1, 1.5, 2, 3];
-
   function initViewer(id) {
     var viewport = document.getElementById("viewport-" + id);
     if (!viewport) return;
@@ -229,199 +169,120 @@
     var speedLabel = document.getElementById("speed-label-" + id);
     var state = { scale: 1, tx: 0, ty: 0, min: 1, max: 8, speedIdx: 0,
                   dims: null, rafPending: false, inertia: null, drag: null, captured: false };
-    var pointers = {}; // 活动指针（支持双指捏合）
-    var pinch = null;
-    var samples = []; // 惯性速度采样
-    var winMove = null, winUp = null; // capture 失败的 window 监听兜底
+    var pointers = {}, pinch = null, samples = [];
+    var winMove = null, winUp = null;
     viewers[id] = { viewport: viewport, img: img, label: label, speedLabel: speedLabel, state: state };
-
     function updateDims() {
-      // 高度自适应：viewport 高度 = 显示宽度 × 图片宽高比（min-height 320px）
-      // 尺寸缓存：load/resize 时读取，pointermove 中禁止读取布局属性（避免强制同步布局）
       var ratio = img.naturalHeight ? img.naturalHeight / img.naturalWidth : 0.5;
       var vw = viewport.clientWidth;
       viewport.style.height = Math.max(320, Math.round(vw * ratio)) + "px";
-      state.dims = {
-        vw: vw,
-        vh: viewport.clientHeight,
-        iw0: img.clientWidth,
-        ratio: ratio
-      };
+      state.dims = { vw: vw, vh: viewport.clientHeight, iw0: img.clientWidth, ratio: ratio };
     }
-
     function render() {
-      // translate 为屏幕坐标，画面位移 = Δtx（1:1 跟手，不受 scale 影响）
       img.style.transform = "translate(" + state.tx + "px," + state.ty + "px) scale(" + state.scale + ")";
       if (label) label.textContent = "×" + state.scale.toFixed(1);
       var sp = SPEED_OPTIONS[state.speedIdx];
       if (speedLabel) speedLabel.textContent = "拖速×" + (sp === Math.round(sp) ? String(sp) : sp.toFixed(1));
     }
-
     function scheduleApply() {
       if (state.rafPending) return;
       state.rafPending = true;
       var fn = function () { state.rafPending = false; render(); };
-      if (typeof requestAnimationFrame === "function") requestAnimationFrame(fn);
-      else fn();
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(fn); else fn();
     }
-
     function clampBounds() {
       if (!state.dims) updateDims();
-      var d = state.dims;
-      var iw = d.iw0 * state.scale, ih = iw * d.ratio;
-      // 以"图片居中于视口"为基准位置，允许偏离不超过 ±maxX/±maxY（按当前缩放倍数计算），
-      // 保证放大后可见范围随 scale 扩大、且图片始终覆盖视口（不会拖出画面）。
+      var d = state.dims, iw = d.iw0 * state.scale, ih = iw * d.ratio;
       var baseX = (d.vw - iw) / 2, baseY = (d.vh - ih) / 2;
-      var maxX = Math.max(0, (iw - d.vw) / 2);
-      var maxY = Math.max(0, (ih - d.vh) / 2);
+      var maxX = Math.max(0, (iw - d.vw) / 2), maxY = Math.max(0, (ih - d.vh) / 2);
       state.tx = baseX + Math.max(-maxX, Math.min(maxX, state.tx - baseX));
       state.ty = baseY + Math.max(-maxY, Math.min(maxY, state.ty - baseY));
     }
-
     function zoomAt(cx, cy, factor) {
-      var old = state.scale;
-      var ns = Math.min(state.max, Math.max(state.min, old * factor));
+      var old = state.scale, ns = Math.min(state.max, Math.max(state.min, old * factor));
       if (ns === old) return;
-      // 以光标为中心的换算（此处 scale 比例换算是正确且必要的，不得改动）
       state.tx = cx - (cx - state.tx) * (ns / old);
       state.ty = cy - (cy - state.ty) * (ns / old);
-      state.scale = ns;
-      state.inertia = null;
-      clampBounds();
-      scheduleApply();
+      state.scale = ns; state.inertia = null; clampBounds(); scheduleApply();
     }
-
     function reset() {
-      state.inertia = null;
-      state.scale = 1; state.tx = 0; state.ty = 0;
-      clampBounds();
-      scheduleApply();
+      state.inertia = null; state.scale = 1; state.tx = 0; state.ty = 0;
+      clampBounds(); scheduleApply();
     }
-    viewers[id].reset = reset;
-    viewers[id].render = render;
-    viewers[id].updateDims = updateDims;
-
+    viewers[id].reset = reset; viewers[id].render = render; viewers[id].updateDims = updateDims;
     viewers[id].changeSpeed = function (delta) {
       var n = SPEED_OPTIONS.length;
-      state.speedIdx = (state.speedIdx + delta + n) % n;
-      render();
+      state.speedIdx = (state.speedIdx + delta + n) % n; render();
     };
-
-    function stopInertia() { state.inertia = null; }
-
-    function inertiaStep() {
-      var it = state.inertia;
-      if (!it) return;
-      state.tx += it.vx;
-      state.ty += it.vy;
-      it.vx *= 0.9; it.vy *= 0.9;
-      clampBounds();
-      scheduleApply();
-      if (Math.abs(it.vx) + Math.abs(it.vy) < 0.1) { state.inertia = null; return; }
-      if (typeof requestAnimationFrame === "function") requestAnimationFrame(inertiaStep);
-      else setTimeout(inertiaStep, 16);
-    }
-
-    function startInertia() {
-      if (state.inertia || samples.length < 2) return;
-      var last = samples[samples.length - 1], prev = samples[samples.length - 2];
-      var dt = last.t - prev.t;
-      if (dt <= 0) return;
-      var vx = (last.x - prev.x) / dt * 16.67; // px/帧（约 60fps）
-      var vy = (last.y - prev.y) / dt * 16.67;
-      var cap = 40;
-      vx = Math.max(-cap, Math.min(cap, vx));
-      vy = Math.max(-cap, Math.min(cap, vy));
-      if (Math.abs(vx) + Math.abs(vy) < 0.5) return;
-      state.inertia = { vx: vx, vy: vy };
-      inertiaStep();
-    }
-
-    // ---- 共享拖拽逻辑（PointerEvent 与鼠标兜底共用） ----
     function onDown(x, y, pid) {
-      stopInertia(); // 再次拖拽立即接管惯性
-      pointers[pid] = { x: x, y: y };
+      state.inertia = null; pointers[pid] = { x: x, y: y };
       if (Object.keys(pointers).length === 1) {
-        viewport.classList.add("dragging");
-        samples = [];
-        // 起点坐标式拖拽：记录起始指针位置与起始 translate，mousemove 用原始像素增量 × 拖速系数
+        viewport.classList.add("dragging"); samples = [];
         state.drag = { startX: x, startY: y, startTx: state.tx, startTy: state.ty };
       } else if (Object.keys(pointers).length === 2) {
-        state.drag = null;
-        samples = [];
-        var ids = Object.keys(pointers);
-        var p1 = pointers[ids[0]], p2 = pointers[ids[1]];
-        pinch = {
-          dist: Math.hypot(p1.x - p2.x, p1.y - p2.y),
-          midX: (p1.x + p2.x) / 2, midY: (p1.y + p2.y) / 2,
-          scale: state.scale, tx: state.tx, ty: state.ty
-        };
+        state.drag = null; samples = [];
+        var ids = Object.keys(pointers), p1 = pointers[ids[0]], p2 = pointers[ids[1]];
+        pinch = { dist: Math.hypot(p1.x - p2.x, p1.y - p2.y), midX: (p1.x + p2.x) / 2,
+                  midY: (p1.y + p2.y) / 2, scale: state.scale, tx: state.tx, ty: state.ty };
       }
     }
-
     function onMove(x, y, pid) {
       if (!(pid in pointers)) return;
       var ids = Object.keys(pointers);
       if (ids.length === 1) {
         if (!state.drag) return;
-        // 原始像素增量 1:1 跟手（× 拖速系数），禁止除以 scale（translate 在屏幕坐标系，不受 scale 影响）
         var speed = SPEED_OPTIONS[state.speedIdx];
         state.tx = state.drag.startTx + (x - state.drag.startX) * speed;
         state.ty = state.drag.startTy + (y - state.drag.startY) * speed;
         samples.push({ t: Date.now(), x: x, y: y });
         if (samples.length > 3) samples.shift();
-        clampBounds();
-        scheduleApply();
+        clampBounds(); scheduleApply();
       } else if (ids.length === 2 && pinch) {
-        pointers[pid] = { x: x, y: y };
-        state.drag = null;
-        samples = [];
+        pointers[pid] = { x: x, y: y }; state.drag = null; samples = [];
         var p1 = pointers[ids[0]], p2 = pointers[ids[1]];
-        var dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-        var midX = (p1.x + p2.x) / 2, midY = (p1.y + p2.y) / 2;
-        var factor = dist / pinch.dist;
-        var ns = Math.min(state.max, Math.max(state.min, pinch.scale * factor));
-        var rect = viewport.getBoundingClientRect();
-        var cx = midX - rect.left, cy = midY - rect.top;
+        var dist = Math.hypot(p1.x - p2.x, p1.y - p2.y), midX = (p1.x + p2.x) / 2, midY = (p1.y + p2.y) / 2;
+        var factor = dist / pinch.dist, ns = Math.min(state.max, Math.max(state.min, pinch.scale * factor));
+        var rect = viewport.getBoundingClientRect(), cx = midX - rect.left, cy = midY - rect.top;
         state.tx = cx - (cx - pinch.tx) * (ns / pinch.scale);
         state.ty = cy - (cy - pinch.ty) * (ns / pinch.scale);
-        state.scale = ns;
-        clampBounds();
-        scheduleApply();
+        state.scale = ns; clampBounds(); scheduleApply();
       }
     }
-
-    function cleanupWindowListeners() {
-      if (winMove) { window.removeEventListener("pointermove", winMove); winMove = null; }
-      if (winUp) { window.removeEventListener("pointerup", winUp); winUp = null; }
-    }
-
     function onUp(pid) {
       delete pointers[pid];
       if (Object.keys(pointers).length < 2) pinch = null;
       if (Object.keys(pointers).length === 1) {
-        // 双指捏合抬起到单指：以当前 translate 为起点继续单指拖拽（原始像素增量）
         var remain = pointers[Object.keys(pointers)[0]];
         state.drag = { startX: remain.x, startY: remain.y, startTx: state.tx, startTy: state.ty };
         samples = [];
       } else if (Object.keys(pointers).length === 0) {
-        state.drag = null;
-        viewport.classList.remove("dragging");
-        cleanupWindowListeners();
-        startInertia(); // 松手后惯性滑动（可跳过，不影响验收）
+        state.drag = null; viewport.classList.remove("dragging"); startInertia();
       }
     }
-
-    // ---- 事件绑定 ----
+    function startInertia() {
+      if (state.inertia || samples.length < 2) return;
+      var last = samples[samples.length - 1], prev = samples[samples.length - 2], dt = last.t - prev.t;
+      if (dt <= 0) return;
+      var cap = 40;
+      var vx = Math.max(-cap, Math.min(cap, (last.x - prev.x) / dt * 16.67));
+      var vy = Math.max(-cap, Math.min(cap, (last.y - prev.y) / dt * 16.67));
+      if (Math.abs(vx) + Math.abs(vy) < 0.5) return;
+      state.inertia = { vx: vx, vy: vy }; inertiaStep();
+    }
+    function inertiaStep() {
+      var it = state.inertia;
+      if (!it) return;
+      state.tx += it.vx; state.ty += it.vy;
+      it.vx *= 0.9; it.vy *= 0.9; clampBounds(); scheduleApply();
+      if (Math.abs(it.vx) + Math.abs(it.vy) < 0.1) { state.inertia = null; return; }
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(inertiaStep);
+      else setTimeout(inertiaStep, 16);
+    }
     if (window.PointerEvent) {
-      // 主路径：Pointer Events（鼠标 + 触屏统一）
       viewport.addEventListener("pointerdown", function (e) {
-        e.preventDefault(); // 阻止浏览器原生图片拖拽（幽灵图）
-        try {
-          viewport.setPointerCapture(e.pointerId);
-          state.captured = true;
-        } catch (err) {
-          // capture 失败：改为在 window 上监听 move/up
+        e.preventDefault();
+        try { viewport.setPointerCapture(e.pointerId); state.captured = true; }
+        catch (err) {
           state.captured = false;
           if (!winMove) {
             winMove = function (ev) { onMove(ev.clientX, ev.clientY, ev.pointerId); };
@@ -437,78 +298,40 @@
       viewport.addEventListener("pointerup", function (e) { onUp(e.pointerId); });
       viewport.addEventListener("pointercancel", function (e) { onUp(e.pointerId); });
     } else {
-      // 兼容性兜底：无 PointerEvent 时用 mousedown/mousemove/mouseup
       viewport.addEventListener("mousedown", function (e) {
-        e.preventDefault();
-        onDown(e.clientX, e.clientY, 1);
+        e.preventDefault(); onDown(e.clientX, e.clientY, 1);
         var mm = function (ev) { onMove(ev.clientX, ev.clientY, 1); };
-        var mu = function () {
-          onUp(1);
-          document.removeEventListener("mousemove", mm);
-          document.removeEventListener("mouseup", mu);
-        };
-        document.addEventListener("mousemove", mm);
-        document.addEventListener("mouseup", mu);
+        var mu = function () { onUp(1); document.removeEventListener("mousemove", mm); document.removeEventListener("mouseup", mu); };
+        document.addEventListener("mousemove", mm); document.addEventListener("mouseup", mu);
       });
     }
-
-    // 双保险：禁止原生图片拖拽（幽灵图）
     img.setAttribute("draggable", "false");
     img.addEventListener("dragstart", function (e) { e.preventDefault(); });
-
-    // 滚轮缩放：以光标为中心
     viewport.addEventListener("wheel", function (e) {
-      e.preventDefault();
-      stopInertia();
-      var rect = viewport.getBoundingClientRect();
-      var cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+      e.preventDefault(); state.inertia = null;
+      var rect = viewport.getBoundingClientRect(), cx = e.clientX - rect.left, cy = e.clientY - rect.top;
       zoomAt(cx, cy, e.deltaY < 0 ? 1.15 : 1 / 1.15);
     }, { passive: false });
-
-    // 双击复位
     viewport.addEventListener("dblclick", function (e) { e.preventDefault(); reset(); });
-
-    // 图片加载后按宽高比自适应高度并居中显示；尺寸缓存随加载与窗口缩放刷新
     if (img.complete && img.naturalWidth > 0) { updateDims(); reset(); }
     else { img.addEventListener("load", function () { updateDims(); reset(); }); }
     window.addEventListener("resize", function () { updateDims(); scheduleApply(); });
   }
-
-  function changeSpeed(id, delta) {
-    if (viewers[id] && viewers[id].changeSpeed) viewers[id].changeSpeed(delta);
-  }
-
-  function resetView(id) {
-    if (viewers[id] && viewers[id].reset) viewers[id].reset();
-  }
-
+  function changeSpeed(id, delta) { if (viewers[id] && viewers[id].changeSpeed) viewers[id].changeSpeed(delta); }
+  function resetView(id) { if (viewers[id] && viewers[id].reset) viewers[id].reset(); }
   function showTab(name, btn) {
     document.querySelectorAll(".tab-panel").forEach(function (p) { p.classList.remove("active"); });
     document.querySelectorAll(".tab-btn").forEach(function (b) { b.classList.remove("active"); });
     document.getElementById("panel-" + name).classList.add("active");
     btn.classList.add("active");
-    ["pano", "zoom"].forEach(function (kind) {
+    ["pano"].forEach(function (kind) {
       var v = viewers[name + "-" + kind];
-      if (v) {
-        v.updateDims();
-        v.state.inertia = null;
-        // 按缓存尺寸重算居中/边界后渲染
-        var d = v.state.dims;
-        var iw = d.iw0 * v.state.scale, ih = iw * d.ratio;
-        var baseX = (d.vw - iw) / 2, baseY = (d.vh - ih) / 2;
-        var maxX = Math.max(0, (iw - d.vw) / 2), maxY = Math.max(0, (ih - d.vh) / 2);
-        v.state.tx = baseX + Math.max(-maxX, Math.min(maxX, v.state.tx - baseX));
-        v.state.ty = baseY + Math.max(-maxY, Math.min(maxY, v.state.ty - baseY));
-        v.render();
-      }
+      if (v) { v.updateDims(); v.state.inertia = null; v.render(); }
     });
   }
-
   document.addEventListener("DOMContentLoaded", function () {
     initViewer("main-pano");
-    initViewer("main-zoom");
     initViewer("alt-pano");
-    initViewer("alt-zoom");
   });
 </script>
 </body>

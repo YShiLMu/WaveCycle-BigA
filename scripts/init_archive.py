@@ -26,7 +26,7 @@ import os
 import re
 import sys
 
-from naming import doc_names, validate_component
+from naming import IMAGE_FILENAMES, doc_names, validate_component
 
 
 def main():
@@ -64,7 +64,7 @@ def main():
     for doc in doc_names(name, code, stamp):
         print("       - " + os.path.join(folder, doc))
     print("     浪型图命名（embed_report_images.py 权威）：")
-    print("       主方案_全景.png / 主方案_放大.png / 替代方案_全景.png / 替代方案_放大.png")
+    print("       " + " / ".join(IMAGE_FILENAMES))
     print("     生成交付文档后运行：")
     print("       python embed_report_images.py \"%s\"" % os.path.abspath(folder))
     return 0
