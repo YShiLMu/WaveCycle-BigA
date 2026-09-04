@@ -268,6 +268,7 @@ def main(argv=None):
     print("== 7. gen_report_web.py / gen_report_md.py（stdin data.json 渲染网页与 md）==")
     data = {
         "标的名称": "冒烟", "标的代码": "000000", "时间戳": "20260101_1200",
+        "细分深度": 2,
         "fields": {
             "分析日期": "2026-01-01", "分析级别": "日线级别", "收盘价": str(last_close),
             "主方案说明": "测试", "主方案失效": "测试", "替代方案": "测试",

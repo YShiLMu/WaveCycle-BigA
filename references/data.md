@@ -45,6 +45,7 @@
 ## 3. 输出契约（统一 CSV 格式）
 
 - **列**：`date,open,high,low,close[,volume]`，一律小写、按日期升序；**volume 为可选列**（`scripts/ew_chart.py` 只读取前五列，不依赖 volume；volume 仅作数据自检/量能参考）。
+- **列序（强制）**：落盘前必须**显式重排为契约列序** `date,open,high,low,close`（如 `df = df[["date","open","high","low","close"]]`），**禁止依赖数据源原生列序**——腾讯 fqkline / 港股 / 美股返回 `date,open,close,high,low`（close 在 high 前），与契约相反；`data_check.py` 按"**列名序列精确匹配**"校验（D28），**列序错位判"不通过"并退出码 1**，禁止带病数浪（绝不能出现"按列名读的自检通过、而按位置读的 swings 静默错读"）。
 - **元信息**：CSV 头部注释或配套字段必须包含：复权标记（none/qfq/hfq，hfq 必须注明计算依据）、数据源（mootdx/腾讯/百度/新浪/同花顺/用户提供）、截至时间（最后一根 K 线的日期时间）。
 - **说明**：`scripts/ew_chart.py` 与极端价位提取（references/rules.md R20）都依赖此固定格式，禁止自定义列名。
 - **用途边界**：CSV 仅用于分析过程、不进入交付文件夹；交付文档中的图片内嵌见 `scripts/embed_report_images.py`（`references/workflow.md（第 4 步）` 第 2.3 节）。

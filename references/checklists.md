@@ -63,6 +63,7 @@
 | C6-1 级别声明 | Rule | references/rules.md R22 | 方案声明了分析级别（含标注符号与当前浪段） | | |
 | C6-2 标注规范 | Rule | references/rules.md R23 | 同一张图未混用两套标注符号 | | |
 | C6-3 主备方案 | Rule | references/rules.md R24 | 同时给出主方案与至少一个替代，各自独立失效价位 | | |
+| C6-4 禁止预标未完成结构 | Rule | references/rules.md R34、references/defaults.md D39 | 只实线标注已确认子浪，进行中段虚线+"进行中"，未预标未完成子结构（通用条目，适用全部形态） | | |
 
 ## 2. 楔形校验（02 楔形校验清单）
 

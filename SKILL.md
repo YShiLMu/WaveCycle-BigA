@@ -86,6 +86,7 @@ description: 观复（WaveCycle）· 技术分析融合版——在 Elliott Wave
 | 工作流细节与交接格式 | `references/workflow.md` |
 | 项目默认口径（须披露的量化约定） | `references/defaults.md` |
 | A 股数据获取协议（函数映射、默认参数、CSV 契约、降级链） | `references/data.md` |
+| 执行纪律与工具使用（防呆：列序重排/CLI 参数/输出读取/时间戳单一来源） | `references/tool_discipline.md` |
 | 规则冲突与形态边界裁决 | `references/rule_conflicts.md` |
 | 道氏理论（趋势方向前提层、DO 信号、指数互证口径） | `references/dow.md` |
 | 江恩理论（时间/价位验证层、GN 信号、共振判定） | `references/gann.md` |

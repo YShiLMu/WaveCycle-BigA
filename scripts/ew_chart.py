@@ -73,12 +73,15 @@ THEMES = {
 }
 
 # 底部注释区（左=线的注释，右=浪型）统一排版参数：
-#   _BOTTOM_Y0     —— 两块第一行统一 y（贴近注释块顶部=贴近主图）
-#   _BOTTOM_ROW_H  —— 所有行统一行距（水平线/通道/大浪/小浪同一行距，不再各自算行距）
-#   _BOTTOM_FS     —— 所有文字统一字号
-_BOTTOM_Y0 = 0.94
+#   _BOTTOM_Y0     —— 两块第一行统一 y（贴近注释块顶部=贴近主图，不碰坐标轴/日期）
+#   _BOTTOM_ROW_H  —— 行距下限（行数少时的默认行距；行数多时不压缩行距，
+#                    而是按 _BOTTOM_ROW_IN/行 加高画布，见 _bottom_layout）
+#   _BOTTOM_FS     —— 所有文字统一字号（固定 13pt，不随 font_scale 缩放）
+#   _BOTTOM_ROW_IN —— 每行占用的画布英寸数（按 13pt 字号+bbox 内边距定 0.35）
+_BOTTOM_Y0 = 0.93
 _BOTTOM_ROW_H = 0.13
-_BOTTOM_FS = 11
+_BOTTOM_FS = 13
+_BOTTOM_ROW_IN = 0.35
 
 _CJK_FONTS = ["Microsoft YaHei", "SimHei", "SimSun", "Noto Sans CJK SC"]
 _found = None
@@ -105,6 +108,47 @@ def _fmt_price(v):
 def _label_level(lb):
     """浪标签层级：连字符段数+1。1→1级、1-1→2级、1-1-1→3级（标注"1-1-1"式多级子浪）。"""
     return str(lb).count("-") + 1
+
+
+def _text_units(s):
+    """估算文本宽度单位：CJK 全角字符计 2、其余计 1（用于底部列宽按比例分配）。"""
+    return sum(2 if ord(c) > 0x2E80 else 1 for c in str(s))
+
+
+def _bottom_layout(paths, waves, pivots, levels, invalids, current_price, channels, fs):
+    """预计算底部注释区所需行数与画布尺寸（在建 figure 前调用）。
+
+    行距不压缩：行数多时按 _BOTTOM_ROW_IN/行 加高底部注释区、同步加高整张画布，
+    保证文字永不溢出/叠行（最多列行数 → bottom_in = 0.35 + 行数 × 行高英寸）。
+    返回 (fig_h, main_in, bottom_in, row_h_frac, bottom_rows)：
+    fig_h 画布总高(英寸)，row_h_frac 为底部坐标轴内每行的分数行距。
+    """
+    n_lvl = {1: 0, 2: 0}
+    for idxs, labels in paths or []:
+        seq = labels if len(labels) == len(idxs) else list(labels) * len(idxs)
+        for lb in seq:
+            if lb:
+                lv = _label_level(lb)
+                if lv in n_lvl:
+                    n_lvl[lv] += 1
+    for label, *_rest in waves or []:
+        if label:
+            lv = _label_level(label)
+            if lv in n_lvl:
+                n_lvl[lv] += 1
+    # 浪型区两列：大级别列 = pivots + 1级子浪 + 当前价；2级列 = 2级子浪（无列标题行）
+    wave_col1 = len(pivots or []) + n_lvl[1] + (1 if current_price is not None else 0)
+    wave_col2 = n_lvl[2]
+    wave_rows = max(wave_col1, wave_col2)
+    legend_rows = (len(levels or []) + len(invalids or [])
+                   + (1 if current_price is not None else 0) + (2 if channels else 0))
+    bottom_rows = max(wave_rows, legend_rows, 3)
+    row_in = _BOTTOM_ROW_IN
+    bottom_in = 0.35 + bottom_rows * row_in
+    main_in = 8.4
+    fig_h = main_in + bottom_in + 1.1  # 标题/边距余量
+    row_h_frac = row_in / bottom_in
+    return fig_h, main_in, bottom_in, row_h_frac, bottom_rows
 
 
 def _level_color(lb, t):
@@ -189,12 +233,17 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
 
     t = THEMES.get(theme, THEMES["dark"])
 
-    # 宽幅图（含底部注释带）：主图区 + 下方注释区
-    fig = plt.figure(figsize=(18, 10))
+    fs = font_scale
+    # 宽幅图（含底部注释带）：主图区 + 下方注释区。
+    # 底部行距不压缩：先按输入（pivots/paths/waves/levels/invalids…）预估最多行数，
+    # 行数多则按 _BOTTOM_ROW_IN/行 加高画布（_bottom_layout），文字永不叠行。
+    fig_h, main_in, bottom_in, row_h, _brows = _bottom_layout(
+        paths, waves, pivots, levels, invalids, current_price, channels, fs)
+    fig = plt.figure(figsize=(18, fig_h))
     # 布局：主图跨全宽（只画线，不放任何文字）。
     #   下方 2 块：左 = 平行线注释（ax_legend）；右 = 浪型区（ax_waves，内部大浪左列+小浪右列）。
     #   大浪/小浪行距各自独立、互不干涉；第一行 y 统一用 _BOTTOM_Y0。
-    gs = fig.add_gridspec(2, 2, height_ratios=[6.4, 1.2], hspace=0.16, wspace=0.05,
+    gs = fig.add_gridspec(2, 2, height_ratios=[main_in, bottom_in], hspace=0.08, wspace=0.05,
                           width_ratios=[1.0, 1.6])
     ax = fig.add_subplot(gs[0, :])
     ax_legend = fig.add_subplot(gs[1, 0])
@@ -207,7 +256,6 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
     # 导致浪段与价位标注不可见；原生实现标注稳定（已在多案例实测）。
     _draw_candles(ax, plot_df, t=t)
 
-    fs = font_scale
     ax.set_title(title, fontsize=17 * fs, pad=14, color=t["text"])
     ax.set_ylabel("价格", fontsize=13 * fs, color=t["text"])
     ax.grid(True, linestyle="--", alpha=0.4, color=t["grid"])
@@ -288,7 +336,7 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
     if channels:
         legend_lines.append((t["channel"], "青色实线", "平行通道：上轨=连[1][3]高点"))
         legend_lines.append((t["channel"], "青色虚线", "平行通道：下轨=过[2]低点平行"))
-    _draw_level_legend(ax_legend, plot_df, legend_lines, t, fs)
+    _draw_level_legend(ax_legend, plot_df, legend_lines, t, fs, row_h=row_h)
 
     # 3b) 浪型区：按层级分多块（大级别 / 2级 / 3级…），层级越高颜色越显眼（与线上颜色一致）
     #     块1=大级别（pivot [I][II] 等 + 单数字 1 级子浪）；块2+ = 多级子浪（1-1、1-1-1 按连字符段数分级）
@@ -311,7 +359,7 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
         sub_groups.setdefault(1, []).append(("当前", _fmt_price(current_price),
                                              plot_df.index[-1].strftime("%Y-%m-%d")))
     # 浪型区：大级别块 + 逐级子浪块（多列并排，第一行 y 统一 _BOTTOM_Y0）
-    _draw_wave_legend(ax_waves, big_seq, sub_groups, t, fs)
+    _draw_wave_legend(ax_waves, big_seq, sub_groups, t, fs, row_h=row_h)
 
     # 比率目标区：浅色区间（只画区间，不放文字到 K 线旁，底部已说明）
     if fib_zones:
@@ -334,8 +382,10 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
             ax.plot([a, x_end], [p0, y_end], color=t["gann"], linestyle=ls,
                     linewidth=lw, alpha=0.9, zorder=5)
 
-    # 不用 tight_layout（与 gridspec 冲突会挤掉 x 轴日期），改用 subplots_adjust 留边
-    fig.subplots_adjust(left=0.05, right=0.985, top=0.93, bottom=0.12)
+    # 不用 tight_layout（与 gridspec 冲突会挤掉 x 轴日期），改用 subplots_adjust 留边；
+    # 底边距按英寸换算（画布高度已随底部行数自适应，固定分数会在高画布上留白过多）
+    fig.subplots_adjust(left=0.05, right=0.985, top=1 - 0.62 / fig_h,
+                        bottom=0.30 / fig_h)
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     # 紧凑裁边：坐标轴铺满图片，四周无多余白边
     fig.savefig(out_path, dpi=180, bbox_inches="tight", pad_inches=0.15)
@@ -451,12 +501,12 @@ def _draw_channels(ax, plot_df, base, channels, t, fs):
         # 与标题同高度区域统一标注（见 _draw_level_legend / draw_chart 的 legend_lines）。
 
 
-def _draw_level_legend(ax, plot_df, lines, t, fs):
+def _draw_level_legend(ax, plot_df, lines, t, fs, row_h=_BOTTOM_ROW_H):
     """左块（线的注释）：水平线 + 平行通道，连续排布。
 
     lines: [(color, 线型描述, 说明文本), ...]，如 [(蓝色, "蓝色点划线", "2015大顶 3108.70")]。
-    所有行统一行距(_BOTTOM_ROW_H)与字号(_BOTTOM_FS)，第一行 y=_BOTTOM_Y0（与右块对齐）。
-    每行左侧一个色块示意（短横线），右侧说明文字。
+    所有行统一行距（row_h，由 _bottom_layout 按画布底部区实际高度换算）与字号(_BOTTOM_FS)，
+    第一行 y=_BOTTOM_Y0（与右块对齐）。每行左侧一个色块示意（短横线），右侧说明文字。
     """
     if not lines:
         ax.axis("off")
@@ -465,7 +515,7 @@ def _draw_level_legend(ax, plot_df, lines, t, fs):
     ax.set_ylim(0, 1)
     ax.axis("off")
     for i, (color, ltype, desc) in enumerate(lines):
-        y = _BOTTOM_Y0 - i * _BOTTOM_ROW_H
+        y = _BOTTOM_Y0 - i * row_h
         x0 = 0.03
         # 线型（按 ltype 单词判线型，与图上实际线型一致）
         if "虚线" in ltype:
@@ -476,12 +526,12 @@ def _draw_level_legend(ax, plot_df, lines, t, fs):
             ls = "-."
         ax.plot([x0, x0 + 0.035], [y, y], color=color, linestyle=ls,
                 linewidth=1.8, zorder=8)
-        ax.text(x0 + 0.05, y, f"{desc}", color=t["text"], fontsize=_BOTTOM_FS * fs,
+        ax.text(x0 + 0.05, y, f"{desc}", color=t["text"], fontsize=_BOTTOM_FS,
                 ha="left", va="center", zorder=8)
     return
 
 
-def _draw_wave_legend(ax, big_seq, sub_groups, t, fs):
+def _draw_wave_legend(ax, big_seq, sub_groups, t, fs, row_h=_BOTTOM_ROW_H):
     """右块（浪型）：按层级分多个文本块并排——块1 大级别([I][II]等 + 1级子浪)，
     块2+ 为多级子浪(1-1、1-1-1 按连字符段数分 2级/3级…)，颜色与对应层级连线一致。
 
@@ -491,7 +541,9 @@ def _draw_wave_legend(ax, big_seq, sub_groups, t, fs):
 
     big_seq: [(label, price, date), ...] 大级别浪（[I][II][III]…）
     sub_groups: {level: [(label, price, date), ...]} 按层级分组（level=连字符段数+1）
-    每列顶部一块标题（大级别/2级/3级…），下列该级终点；列均分，行统一行距。
+    每列直接列该级终点（无列标题，颜色即级别区分）；
+    列宽按各列最长文本的宽度单位（CJK 计 2）比例分配（不再均分），
+    行距 row_h 由 _bottom_layout 按画布底部区实际高度换算（行数多则加高画布而非压缩行距）。
     """
     if not big_seq and not sub_groups:
         ax.axis("off")
@@ -504,19 +556,28 @@ def _draw_wave_legend(ax, big_seq, sub_groups, t, fs):
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
-    xw = 0.94 / max(1, n)
-    for ci, (title, rows) in enumerate(cols):
-        x0 = 0.03 + ci * xw
-        # 块标题（每列顶部，小字渐隐）
-        ax.text(x0, min(0.99, _BOTTOM_Y0 + _BOTTOM_ROW_H * 0.40), title,
-                color=t["note"], fontsize=_BOTTOM_FS * fs * 0.85,
-                ha="left", va="center", zorder=8)
-        # 该级终点（数据行）
+    # 列宽自适应：按各列最长数据行文本的宽度单位比例分配，设下限防空列被挤没
+    weights = []
+    for _title, rows in cols:
+        u = 6
+        for lb, pr, dt in rows:
+            u = max(u, _text_units(f"{lb}: {pr}, {_dot_fmt(dt)}"))
+        weights.append(u)
+    total = sum(weights)
+    shares = [max(0.14, 0.94 * w / total) for w in weights]
+    scale = 0.94 / sum(shares)  # 归一化回 0.94 总宽
+    shares = [s * scale for s in shares]
+    x_starts = [0.03]
+    for s in shares[:-1]:
+        x_starts.append(x_starts[-1] + s)
+    for ci, (_title, rows) in enumerate(cols):
+        x0 = x_starts[ci]
+        # 该级终点（数据行，第一行与左块注释 y 对齐=_BOTTOM_Y0）
         for i, (lb, pr, dt) in enumerate(rows):
-            y = _BOTTOM_Y0 - i * _BOTTOM_ROW_H
+            y = _BOTTOM_Y0 - i * row_h
             col = t["text"] if lb == "当前" else _level_color(lb, t)
             ax.text(x0, y, f"{lb}: {pr}, {_dot_fmt(dt)}", color=col,
-                    fontsize=_BOTTOM_FS * fs, ha="left", va="center", zorder=8,
+                    fontsize=_BOTTOM_FS, ha="left", va="center", zorder=8,
                     bbox=dict(boxstyle="round,pad=0.1", fc=t["label_fc"],
                               ec=t["frame"], alpha=0.9, lw=0.6))
     return
@@ -699,25 +760,25 @@ def main():
                         "如 --out-auto \"C:/x/图表|主方案|全景\" → DIR/主方案_全景.png；"
                         "与 --out 互斥，命名约定单一出处，禁止手工另起名")
     p.add_argument("--title", required=True, help="图标题（含分析级别与方案名）")
-    p.add_argument("--waves", nargs="*", type=parse_wave_arg, default=[],
+    p.add_argument("--waves", nargs="*", action="append", type=parse_wave_arg, default=[],
                    help="浪段标注：标签:起点:终点:备注[:方向up/down/auto]。"
                         "起点/终点可为整数索引 或 YYYY-MM-DD 日期（与 --start 口径一致，"
                         "日期须为数据内交易日）；方向默认 auto=按端点极端价位判定"
                         "（终点高/低均高于起点→上行，均低→下行，区间重叠回退收盘比较，R20 口径）；"
                         "三段分隔符为冒号，勿用 @ 或空格；仅作大级别底图，子浪请用 --path")
-    p.add_argument("--invalid", nargs="*", type=parse_price_arg, default=[],
+    p.add_argument("--invalid", nargs="*", action="append", type=parse_price_arg, default=[],
                    help="失效价位：价格:标签（含规则编号）")
-    p.add_argument("--level", nargs="*", type=parse_price_arg, default=[],
+    p.add_argument("--level", nargs="*", action="append", type=parse_price_arg, default=[],
                    help="关键阻力/支撑：价格:标签（蓝色点划线，区别于失效价位）")
     p.add_argument("--current", type=float, default=None, help="当前价格")
-    p.add_argument("--fib", nargs="*", type=parse_fib_arg, default=[],
+    p.add_argument("--fib", nargs="*", action="append", type=parse_fib_arg, default=[],
                    help="斐波那契目标区：低:高:标签")
     p.add_argument("--last", type=int, default=None, help="只绘制最近 N 根 K 线")
     p.add_argument("--start", default=None, metavar="INDEX|YYYY-MM-DD",
                    help="观察窗口左界（起画点）：数值=原始 CSV 行号，或日期 YYYY-MM-DD；"
                         "全景图传该方案最大分析级别标注结构的第 1 浪起点；"
                         "强制 X 轴从该点起画；与 --path 同用触发首端点贴起点校验，禁止从数据起点或中途起画")
-    p.add_argument("--gann", nargs="*", default=[], metavar="FAN",
+    p.add_argument("--gann", nargs="*", action="append", default=[], metavar="FAN",
                    help="江恩角度线扇形（可选叠加）：起点索引:起点价格[:刻度][:方向up/down]；"
                         "刻度 = 每根 K 线 1 单位价格（分档见项目默认口径 D23），须披露")
     p.add_argument("--gann-auto-scale", action="store_true",
@@ -736,14 +797,22 @@ def main():
                         "子浪必用 --path、大级别底图用 --waves；默认 2 层=每个大级别浪都叠第 2 层子浪，"
                         "用户明确要 3 层才叠第 3 层（09 默认口径表 D37）。"
                         "例：--path \"1-1@339,1-2@465\" --path \"1-1-1@360,1-1-2@400\"")
-    p.add_argument("--channel", nargs="*", type=parse_channel_arg, default=[],
+    p.add_argument("--channel", nargs="*", action="append", type=parse_channel_arg, default=[],
                    help="推动浪平行通道：1浪高点索引:3浪高点索引:2浪低点索引。"
                         "例：--channel \"4174:4223:4178\"")
-    p.add_argument("--pivot", nargs="*", type=parse_pivot_arg, default=[],
+    p.add_argument("--pivot", nargs="*", action="append", type=parse_pivot_arg, default=[],
                    help="大级别浪标注：标注:索引[:peak/trough]（如 [I]:4484:peak），挂在对应端点，"
                         "白框大号字，与子浪编号框区分（分级标注）。peak=波峰标上方默认、"
                         "trough=波谷标下方。例：--pivot \"[I]:4484:peak\" \"[II]:4612:trough\"")
     args = p.parse_args()
+
+    # 多值参数（--waves/--invalid/--level/--fib/--gann/--channel/--pivot）：
+    # action="append"+nargs="*" 得到嵌套列表，展平为单层。
+    # 修复"同一 flag 分多次传会被 store 静默覆盖只剩最后一个"（如 --level A --level B → [A,B]）。
+    for _n in ("waves", "invalid", "level", "fib", "gann", "channel", "pivot"):
+        _v = getattr(args, _n, None)
+        if isinstance(_v, list) and _v and isinstance(_v[0], (list, tuple)):
+            setattr(args, _n, [x for _sub in _v for x in _sub])
 
     # 输出路径：--out-auto（embed 固定命名权威）优先，与 --out 互斥
     if args.out_auto:
@@ -800,6 +869,23 @@ def main():
         si = resolve_index(df, s, label + "起点")
         ei = resolve_index(df, e, label + "终点")
         waves.append((label, si, ei, note, direction))
+
+    # ---- 外观规范警告（B2：浪级配色，警告不阻断出图）----
+    def _lvl(lb):
+        return str(lb).count("-") + 1
+    if args.waves and args.path:
+        print("[警告] 大级别用 --waves 是 up/down 方向色（青/蓝），不是'首层白'；要首层白色请用 --path 无连字符标签",
+              file=sys.stderr)
+    has_l1 = any(any(l != "" and _lvl(l) == 1 for l in labels)
+                 for _idxs, labels in args.path)
+    if args.path and not has_l1:
+        print("[警告] 缺少大级别白色主链：--path 全是带连字符标签（第 2 层+），未用无连字符标签标大级别（应为白色）",
+              file=sys.stderr)
+    for _idxs, labels in args.path:
+        lv = {_lvl(l) for l in labels if l != ""}
+        if len(lv) > 1:
+            print(f"[警告] 同一条 --path 内标签层级不一致 {sorted(lv)}（一条=一个浪链，勿混层级）",
+                  file=sys.stderr)
 
     draw_chart(df, out_path, args.title, waves, args.invalid,
                current_price=args.current, fib_zones=args.fib, last_n=args.last,

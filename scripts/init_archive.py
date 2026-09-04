@@ -41,6 +41,8 @@ def main():
                    help="目标文件夹已存在时不报错（更新数浪写回原文件夹场景）")
     p.add_argument("--print-dir", action="store_true",
                    help="只打印归档文件夹绝对路径（单行，便于 shell $(...) 捕获）；仍执行创建")
+    p.add_argument("--print-stamp", action="store_true",
+                   help="只打印时间戳 YYYYMMDD_HHMM（单一来源：供 data.json/文件名与文件夹名保持一致）")
     args = p.parse_args()
 
     name = validate_component(args.name, "标的名称")
@@ -54,6 +56,9 @@ def main():
         raise SystemExit("[错误] 归档文件夹已存在（更新写回请加 --force 并确认是同一标的）: %s" % folder)
     os.makedirs(os.path.join(folder, "图表"), exist_ok=True)
 
+    if args.print_stamp:
+        print(stamp)
+        return 0
     if args.print_dir:
         print(os.path.abspath(folder))
         return 0

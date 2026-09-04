@@ -33,20 +33,31 @@ EXTENSIONS = (1.0, 1.272, 1.618, 2.0, 2.618)
 
 def load_ohlc(path):
     """读 CSV（date,open,high,low,close[,volume]），# 开头注释行跳过。
-    返回 (rows, has_volume)；rows 元素为 (date, o, h, l, c[, volume])。"""
+    按表头列名映射列位置（列序无关，防列序错位时按位置错读）；缺必需列即报错。
+    返回 (rows, has_volume)；rows 元素为 (date, o, h, l, c[, volume])。
+    注：本函数为 swings 专用纯 csv 实现，是有意的例外而非遗漏——分工口径见
+    ohlc_io.py 模块 docstring（swings 依赖 # 注释行跳过与「索引=CSV 数据行号」
+    基准语义，不强行并入共享模块）。"""
     rows = []
     has_volume = None
+    col = {}          # 列名(小写) -> CSV 列位置；读表头行建立
     with open(path, encoding="utf-8-sig", newline="") as f:
         for r in csv.reader(f):
             if not r or r[0].lstrip().startswith("#"):
                 continue
             if r[0].strip().lower() == "date":
-                has_volume = len(r) >= 6 and r[5].strip() != ""
+                col = {name.strip().lower(): i for i, name in enumerate(r)}
+                needed = {"date", "open", "high", "low", "close"}
+                if not needed <= set(col):
+                    raise SystemExit("[错误] 表头缺少必需列: %s（需 date,open,high,low,close）"
+                                     % sorted(needed - set(col)))
+                has_volume = "volume" in col
                 continue
-            row = (r[0].strip(), float(r[1]), float(r[2]),
-                   float(r[3]), float(r[4]))
+            row = (r[col["date"]].strip(),
+                   float(r[col["open"]]), float(r[col["high"]]),
+                   float(r[col["low"]]), float(r[col["close"]]))
             if has_volume:
-                row = row + (float(r[5]),)
+                row = row + (float(r[col["volume"]]),)
             rows.append(row)
     if not rows:
         raise SystemExit("[错误] CSV 无数据行: %s" % path)
@@ -342,12 +353,17 @@ def main():
                                  % (d, label))
             seq.append((label, hit[0], hit[1]))
         idxs = [i for _l, i, _d in seq]
+        dup = {d for _l, i, _d in seq if idxs.count(i) > 1}
+        if dup:
+            raise SystemExit("[错误] --path 端点日期重复（同一条浪链内各子浪端点日期须唯一）：%s"
+                             % sorted(dup))
         if any(idxs[k] >= idxs[k + 1] for k in range(len(idxs) - 1)):
             raise SystemExit("[错误] --path 端点索引未严格递增（日期须升序）")
         frag = ",".join("%s@%d" % (l, i) for l, i, _d in seq)
         print("\n--path 参数串（索引由 swings 摆动点定位，禁止手填；首点即起画点）：")
         print("  --path \"" + frag + "\"")
         print("  起画点(ew_chart --start): %s (idx %s)" % (seq[0][2], seq[0][1]))
+        print("  （一条 --path = 一个连续浪链；不同大级别/层级浪请拆分多条 --path 传）")
 
     if args.fib:
         parts = [float(x) for x in args.fib.split(":")]

@@ -40,16 +40,25 @@ import sys
 import pandas as pd
 
 
+CONTRACT_COLS = ["date", "open", "high", "low", "close"]  # 数据契约列序（10 数据获取协议第 3 节）
+
+
 def load_csv(csv_path):
-    """读 CSV，返回 (df 或 None, 表头错误信息)。不做硬拦截，错误交由自检表披露。"""
+    """读 CSV，返回 (df 或 None, 表头错误信息)。不做硬拦截，错误交由自检表披露。
+
+    表头契约 = 前 5 列必须精确等于 CONTRACT_COLS（列序校验，D28）。
+    列序错位（如腾讯 fqkline 返回 date,open,close,high,low，close 在 high 前）在此拦截
+    并判"不通过"，避免下游按位置读取的脚本（swings）静默错读而自检却通过。
+    """
     try:
         df = pd.read_csv(csv_path)
     except Exception as e:  # noqa: BLE001 —— 自检器不抛，转披露
         return None, "CSV 读取失败：%s" % e
-    required = {"date", "open", "high", "low", "close"}
-    missing = required - set(df.columns)
-    if missing:
-        return None, "CSV 缺少列: %s" % sorted(missing)
+    actual = list(df.columns)[:5]
+    if actual != CONTRACT_COLS:
+        return None, ("表头列序不符合契约 %s，实际前 5 列 %s"
+                      "（缺列、乱序均判不通过；常见：腾讯 fqkline 返回 date,open,close,high,low）"
+                      % (CONTRACT_COLS, actual))
     return df, None
 
 
