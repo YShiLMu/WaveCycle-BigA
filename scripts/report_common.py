@@ -39,6 +39,10 @@ TABLE_FIELDS = {
     "失效价位": ["方案", "失效价位", "规则依据", "触发后果"],
 }
 
+# 细分深度（09 默认口径表 D37）：默认 2 层，3 层须用户明确要求。data.json 顶层
+# "细分深度" 必填，取值 2 或 3；校验缺失/非法即 fail。
+SUBDIVISION_DEPTHS = (2, 3)
+
 
 def fail(msg):
     print("[错误] %s" % msg, file=sys.stderr)
@@ -72,6 +76,11 @@ def validate(data):
     stamp = str(data.get("时间戳", ""))
     if not re.fullmatch(r"\d{8}_\d{4}", stamp):
         fail("时间戳 格式应为 YYYYMMDD_HHMM，收到: %r" % stamp)
+
+    depth = data.get("细分深度")
+    if depth not in SUBDIVISION_DEPTHS:
+        fail("细分深度 必填且须为 %s（默认 2 层，3 层须用户明确要求，见 09 默认口径表 D37）；收到: %r"
+             % ("/".join(str(d) for d in SUBDIVISION_DEPTHS), depth))
 
     fields = data.get("fields")
     tables = data.get("tables")

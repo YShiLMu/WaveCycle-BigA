@@ -26,6 +26,9 @@
 用法：
     python data_check.py --csv data.csv [--source 腾讯fqkline] [--fq qfq]
 
+行号基准（坏行提示）：输出为 CSV 文件物理行号（含表头、从 1 数），即
+pandas index + 2；自检器默认同时附注该行对应日期，便于定位（如 530(2016-03-07)）。
+
 退出码：0 = 全部通过；1 = 存在"不通过"项。
 CSV 列：date,open,high,low,close[,volume]（date 兼容 YYYY-MM-DD 与 YYYYMMDD）。
 """
@@ -61,9 +64,13 @@ def _parse_dates(df):
         return None, str(e)
 
 
-def _rows(mask, limit=10):
-    """坏行号（按 CSV 数据行，含表头偏移 +2），最多列 limit 个。"""
-    return [int(i) + 2 for i in df_index(mask)[:limit]]
+def _rows(mask, df=None, limit=10):
+    """坏行号（按 CSV 文件物理行号，含表头、从 1 数），最多列 limit 个。
+    行号 = pandas index + 2（表头占 1 + 索引基准 1）；df 非空时附注对应日期，便于定位。"""
+    idxs = list(df_index(mask)[:limit])
+    if df is not None:
+        return ["%d(%s)" % (int(i) + 2, str(df["date"].iloc[i])[:10]) for i in idxs]
+    return [int(i) + 2 for i in idxs]
 
 
 def df_index(mask):
@@ -85,18 +92,18 @@ def run_checks(df, fq, source):
     bad = []
     m = h < l
     if m.any():
-        bad.append("high<low 行 %s" % _rows(m))
+        bad.append("high<low 行 %s" % _rows(m, df))
     m = l < 0
     if m.any():
-        bad.append("low<0 行 %s" % _rows(m))
+        bad.append("low<0 行 %s" % _rows(m, df))
     m = ((o < l - 1e-9) | (o > h + 1e-9))
     if m.any():
-        bad.append("open 超出 [low,high] 行 %s" % _rows(m))
+        bad.append("open 超出 [low,high] 行 %s" % _rows(m, df))
     m = ((c < l - 1e-9) | (c > h + 1e-9))
     if m.any():
-        bad.append("close 超出 [low,high] 行 %s" % _rows(m))
+        bad.append("close 超出 [low,high] 行 %s" % _rows(m, df))
     if (h.isna() | l.isna() | o.isna() | c.isna()).any():
-        bad.append("OHLC 存在缺失值 行 %s" % _rows(h.isna() | l.isna() | o.isna() | c.isna()))
+        bad.append("OHLC 存在缺失值 行 %s" % _rows(h.isna() | l.isna() | o.isna() | c.isna(), df))
     if bad:
         rows.append(("OHLC 合理性", "不通过", "；".join(bad)))
     else:
@@ -107,7 +114,7 @@ def run_checks(df, fq, source):
         v = df["volume"].astype(float)
         m = v < 0
         if m.any():
-            rows.append(("volume ≥ 0", "不通过", "volume<0 行 %s" % _rows(m)))
+            rows.append(("volume ≥ 0", "不通过", "volume<0 行 %s" % _rows(m, df)))
         else:
             rows.append(("volume ≥ 0", "通过", ""))
     else:
@@ -116,7 +123,7 @@ def run_checks(df, fq, source):
     # ---- 3. 日期升序、无重复、可解析 ----
     dates, derr = _parse_dates(df)
     if dates is None or dates.isna().any():
-        bad_d = "日期解析失败（%s）" % derr if derr else "日期无法解析 行 %s" % _rows(dates.isna())
+        bad_d = "日期解析失败（%s）" % derr if derr else "日期无法解析 行 %s" % _rows(dates.isna(), df)
         rows.append(("日期升序、无重复、可解析", "不通过", bad_d))
     else:
         dup = dates.duplicated()

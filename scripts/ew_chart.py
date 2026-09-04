@@ -532,15 +532,42 @@ def _dot_fmt(date_s):
 
 
 def parse_wave_arg(s):
-    """解析 '标签:起点:终点:备注[:方向]'。方向 up/down/auto（默认 auto）。"""
+    """解析 '标签:起点:终点:备注[:方向]'。方向 up/down/auto（默认 auto）。
+    起点/终点返回原始字符串（整数索引 或 YYYY-MM-DD 日期），由 resolve_index()
+    在拿到 df 后统一归一化为整数索引（与 --start 的日期口径一致，见 main）。"""
     parts = s.split(":", 4)
     if len(parts) not in (4, 5):
         raise argparse.ArgumentTypeError(
-            f"浪段格式应为 标签:起点:终点:备注[:方向up/down/auto]，收到: {s}")
+            "拒绝: 浪段格式应为 标签:起点:终点:备注[:方向up/down/auto]"
+            "（冒号分 4–5 段；起点/终点可为整数索引或 YYYY-MM-DD 日期；勿用 @ 分隔），收到: %r" % s)
     direction = parts[4] if len(parts) == 5 else "auto"
     if direction not in ("up", "down", "auto"):
-        raise argparse.ArgumentTypeError(f"浪段方向只支持 up/down/auto，收到: {direction}")
-    return (parts[0], int(parts[1]), int(parts[2]), parts[3], direction)
+        raise argparse.ArgumentTypeError("拒绝: 浪段方向只支持 up/down/auto，收到: %r" % direction)
+    # 端点保留原文，供 resolve_index 在拿到 df 后转换；这里不转 int（避免误把日期当索引）
+    return (parts[0], parts[1], parts[2], parts[3], direction)
+
+
+def resolve_index(df, token, label):
+    """把 --waves 端点 token 归一化为整数索引。纯数字→int；否则按日期在 df.index
+    定位（与 --start 同一口径，须为数据内交易日）。返回 int 索引。
+    既非整数也非可解析日期时给出清晰报错（勿让底层 DateParseError 漏出）。"""
+    token = token.strip()
+    if token.isdigit():
+        idx = int(token)
+    else:
+        try:
+            ts = pd.Timestamp(token)
+        except Exception:  # noqa: BLE001 —— 统一转成可读的 CLI 报错
+            raise SystemExit("拒绝: --waves %s 端点既非整数索引也非合法日期，无法解析: %r"
+                             "（格式「标签:起点:终点:备注[:方向]」，起点/终点用 : 分隔且需为"
+                             "索引或 YYYY-MM-DD）" % (label, token))
+        pos = df.index.get_indexer([ts])
+        if pos[0] < 0:
+            raise SystemExit("拒绝: --waves %s 的端点日期不在数据内: %s" % (label, token))
+        idx = int(pos[0])
+    if idx < 0 or idx >= len(df):
+        raise SystemExit("拒绝: --waves %s 的端点索引越界: %d（数据共 %d 根）" % (label, idx, len(df)))
+    return idx
 
 
 def parse_price_arg(s):
@@ -673,9 +700,11 @@ def main():
                         "与 --out 互斥，命名约定单一出处，禁止手工另起名")
     p.add_argument("--title", required=True, help="图标题（含分析级别与方案名）")
     p.add_argument("--waves", nargs="*", type=parse_wave_arg, default=[],
-                   help="浪段标注：标签:起点:终点:备注[:方向up/down/auto]；"
-                        "方向默认 auto=按端点极端价位判定（终点高/低均高于起点→上行，"
-                        "均低→下行，区间重叠回退收盘比较，R20 口径）")
+                   help="浪段标注：标签:起点:终点:备注[:方向up/down/auto]。"
+                        "起点/终点可为整数索引 或 YYYY-MM-DD 日期（与 --start 口径一致，"
+                        "日期须为数据内交易日）；方向默认 auto=按端点极端价位判定"
+                        "（终点高/低均高于起点→上行，均低→下行，区间重叠回退收盘比较，R20 口径）；"
+                        "三段分隔符为冒号，勿用 @ 或空格；仅作大级别底图，子浪请用 --path")
     p.add_argument("--invalid", nargs="*", type=parse_price_arg, default=[],
                    help="失效价位：价格:标签（含规则编号）")
     p.add_argument("--level", nargs="*", type=parse_price_arg, default=[],
@@ -704,6 +733,8 @@ def main():
                    help="连续浪路径：框标@索引,... 或 标签:索引:索引:...（按序连成一条带箭头折线，"
                         "端点加编号框）。可多次传入叠加不同层级子浪（如 1-1、1-1-1），"
                         "层级颜色由框标的连字符段数区分（1→白、1-1→青、1-1-1→橙）。"
+                        "子浪必用 --path、大级别底图用 --waves；默认 2 层=每个大级别浪都叠第 2 层子浪，"
+                        "用户明确要 3 层才叠第 3 层（09 默认口径表 D37）。"
                         "例：--path \"1-1@339,1-2@465\" --path \"1-1-1@360,1-1-2@400\"")
     p.add_argument("--channel", nargs="*", type=parse_channel_arg, default=[],
                    help="推动浪平行通道：1浪高点索引:3浪高点索引:2浪低点索引。"
@@ -762,7 +793,15 @@ def main():
             gann_fans = [(idx, price, scale, direction)
                          for idx, price, scale, direction in raw_fans]
 
-    draw_chart(df, out_path, args.title, args.waves, args.invalid,
+    # --waves 端点归一化：日期/索引统一转为整数索引（parse_wave_arg 已保留原文，
+    # 此处须在拿到 df 后转换，与 --start 日期口径一致）
+    waves = []
+    for label, s, e, note, direction in args.waves:
+        si = resolve_index(df, s, label + "起点")
+        ei = resolve_index(df, e, label + "终点")
+        waves.append((label, si, ei, note, direction))
+
+    draw_chart(df, out_path, args.title, waves, args.invalid,
                current_price=args.current, fib_zones=args.fib, last_n=args.last,
                levels=args.level, font_scale=args.font_scale,
                gann_fans=gann_fans, theme=args.theme, paths=args.path,

@@ -70,6 +70,7 @@ def main():
     md_name, _html_name = doc_names(name, code, stamp)
     print("[OK] 分析报告渲染完成（剩余图片引用待 embed_report_images.py 注入），输出重定向到标准文件名：", file=sys.stderr)
     print("     " + md_name, file=sys.stderr)
+    print("[提示] 请仅捕获 stdout：`> 文件名`，不要加 2>&1——本 [OK]/[NEXT] 走 stderr，加 2>&1 会把日志混进交付文档第一行", file=sys.stderr)
     print("[NEXT] python embed_report_images.py <归档文件夹>", file=sys.stderr)
     sys.stdout.write(md)
     return 0

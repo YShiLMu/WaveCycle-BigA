@@ -76,6 +76,7 @@ def main():
           % len(residual - IMAGE_PLACEHOLDERS), file=sys.stderr)
     _md_name, html_name = doc_names(name, code, stamp)
     print("     " + html_name, file=sys.stderr)
+    print("[提示] 请仅捕获 stdout：`> 文件名`，不要加 2>&1——本 [OK]/[NEXT] 走 stderr，加 2>&1 会把日志混进交付文档第一行", file=sys.stderr)
     print("[NEXT] python embed_report_images.py <归档文件夹>", file=sys.stderr)
     sys.stdout.write(html)
     return 0
