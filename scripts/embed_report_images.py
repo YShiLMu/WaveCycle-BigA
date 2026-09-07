@@ -11,20 +11,21 @@
        只缺一张判错退出）;
     2. 定位 分析报告_*.md 与 网页报告_*.html;
     3. md：把 ![说明](...主方案_全景.png) 等图片链接替换为 base64 data URI
-       （--md-keep-absolute 时保留绝对路径、保留 图表/ 目录并在文末注明回退原因）;
+       （--md-keep-absolute 时保留绝对路径并在文末注明回退原因）;
     4. html：把 {{主方案全景图路径}} 等 2 个占位符替换为 base64 data URI；
        单方案防御模式时，替代方案图区 <img> 删除、提示改为"不适用";
     5. 校验：html 内 data:image/png;base64, 数量 == <img class="pano-img"> 数量
        == 实际图片数（2 或 1）；md 图片标记数量 == 实际图片数；html 必须保留模板
        头部特征注释（"波浪理论网页报告模板"）；任一不通过则以退出码 1 结束，
        禁止交付缺图文件。
+
+本脚本不删除 图表/ 目录：PNG 原图与内嵌后的两个交付文档一同永久归档。
 """
 
 import argparse
 import base64
 import pathlib
 import re
-import shutil
 import sys
 
 from naming import HTML_TOKENS, IMAGE_KEYS
@@ -152,14 +153,7 @@ def main():
     print(f"[完成] 已内嵌 {len(images)} 张图（{mode}）：")
     print(f"  md  : {md_path}")
     print(f"  html: {html_path}")
-
-    # 浪型图 PNG 为临时产物：注入完成后清除（交付只留 md+html 两份文档）。
-    # --md-keep-absolute 回退时保留（md 用绝对路径引用 图表/，需目录存在）。
-    if not args.md_keep_absolute:
-        chart_dir = folder / "图表"
-        if chart_dir.exists():
-            shutil.rmtree(chart_dir)
-            print(f"[清理] 已删除临时图表目录：{chart_dir}")
+    print(f"[保留] 图表目录不删除，PNG 原图随归档永久保留：{folder / '图表'}")
 
 
 if __name__ == "__main__":
