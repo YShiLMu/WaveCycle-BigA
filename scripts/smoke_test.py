@@ -268,7 +268,7 @@ def main(argv=None):
     print("== 7. gen_report_web.py / gen_report_md.py（stdin data.json 渲染网页与 md）==")
     data = {
         "标的名称": "冒烟", "标的代码": "000000", "时间戳": "20260101_1200",
-        "细分深度": 2,
+        "细分深度": 2, "细分深度来源": "用户确认-2层",
         "fields": {
             "分析日期": "2026-01-01", "分析级别": "日线级别", "收盘价": str(last_close),
             "主方案说明": "测试", "主方案失效": "测试", "替代方案": "测试",
@@ -277,7 +277,8 @@ def main(argv=None):
             "数据来源": "合成数据", "生成时间": "2026-01-01 12:00",
         },
         "tables": {
-            "分析前提": [{"项": "级别", "内容": "日线级别"}],
+            "分析前提": [{"项": "细分深度来源", "内容": "用户确认-2层"},
+                        {"项": "级别", "内容": "日线级别"}],
             "主方案数浪": [{"浪": "1", "端点": "100/2024-01-01 → 160/2024-02-01", "结构": "Impulse", "说明": "测试"}],
             "neely参考": [{"脚本": "结构阶梯", "输出": "通过", "意义": "测试"}],
             "八因子": [{"因子": "波浪 Rule", "主方案": "通过", "替代方案": "通过"}],
@@ -290,6 +291,13 @@ def main(argv=None):
         },
     }
     payload = json.dumps(data, ensure_ascii=False)
+    # 负例：缺"细分深度来源"应被校验拦截（06 R35/D37，未确认深度不得出报告）
+    bad_payload = json.dumps({k: v for k, v in data.items() if k != "细分深度来源"},
+                             ensure_ascii=False)
+    code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_md.py"),
+                          "--data", "-"], stdin_text=bad_payload)
+    check("缺细分深度来源被拦截（R35/D37）", code != 0 and "细分深度来源" in err,
+          (out + err).strip()[:150])
     # 网页
     code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_web.py"),
                           "--data", "-"], stdin_text=payload)

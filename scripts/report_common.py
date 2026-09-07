@@ -7,12 +7,15 @@
 data.json 模式（顶层键）：
     {
       "标的名称": "...", "标的代码": "...", "时间戳": "YYYYMMDD_HHMM",
+      "细分深度": 2, "细分深度来源": "用户确认-2层",
       "fields": { <PAGE_FIELDS 中各字符串字段> },
       "tables": { <TABLE_FIELDS> 各表为 list[dict]，键与列头一一对应 },
       "简明分析说明": { "大级别浪": "第4浪", "小级别浪": "第4浪的b浪",
                         "neely得分": 1, "neely强度": "中等", "结论": "偏多",
                         "端点": [ {"价": 1111, "日": "2025-01-01"}, ... ] }  # 末项=终点
     }
+细分深度 2/3 必填；细分深度来源（用户确认-2层/用户确认-3层/非交互默认-2层）必填且与深度匹配
+（3 层须匹配用户确认-3层，见 06 R35 / 09 D37）；分析前提表必须含"细分深度来源"行。
 """
 import json
 import os
@@ -39,9 +42,10 @@ TABLE_FIELDS = {
     "失效价位": ["方案", "失效价位", "规则依据", "触发后果"],
 }
 
-# 细分深度（09 默认口径表 D37）：默认 2 层，3 层须用户明确要求。data.json 顶层
-# "细分深度" 必填，取值 2 或 3；校验缺失/非法即 fail。
+# 细分深度（09 默认口径表 D37 / 06 R35）：默认 2 层，3 层须用户明确要求。data.json 顶层
+# "细分深度" 必填（2/3）+ "细分深度来源" 必填且必须匹配（3 层仅用户确认），校验失败即 fail。
 SUBDIVISION_DEPTHS = (2, 3)
+DEPTH_SOURCES = ("用户确认-2层", "用户确认-3层", "非交互默认-2层")
 
 
 def fail(msg):
@@ -79,8 +83,18 @@ def validate(data):
 
     depth = data.get("细分深度")
     if depth not in SUBDIVISION_DEPTHS:
-        fail("细分深度 必填且须为 %s（默认 2 层，3 层须用户明确要求，见 09 默认口径表 D37）；收到: %r"
+        fail("细分深度 必填且须为 %s（默认 2 层，3 层须用户明确要求，见 09 默认口径表 D37 / 06 R35）；收到: %r"
              % ("/".join(str(d) for d in SUBDIVISION_DEPTHS), depth))
+    depth_source = data.get("细分深度来源")
+    if depth_source not in DEPTH_SOURCES:
+        fail("细分深度来源 必填且须为 %s（06 R35 / 09 D37）；收到: %r"
+             % ("/".join(DEPTH_SOURCES), depth_source))
+    if depth == 3 and depth_source != "用户确认-3层":
+        fail("细分深度=3 必须匹配 细分深度来源=用户确认-3层（3 层仅用户明确要求，06 R35 / 09 D37）；收到: %r"
+             % depth_source)
+    if depth == 2 and depth_source not in ("用户确认-2层", "非交互默认-2层"):
+        fail("细分深度=2 仅匹配 细分深度来源=用户确认-2层 或 非交互默认-2层（06 R35 / 09 D37）；收到: %r"
+             % depth_source)
 
     fields = data.get("fields")
     tables = data.get("tables")
@@ -120,6 +134,9 @@ def validate(data):
                 fail("%s 表第 %d 行缺列: %s" % (tname, i + 1, "、".join(bad)))
     if empty_tables:
         fail("data.json 表格为空或缺失: %s" % "、".join(empty_tables))
+    if not any(str(r.get("项", "")).strip() == "细分深度来源"
+               for r in tables.get("分析前提", [])):
+        fail("分析前提表缺少'细分深度来源'行（06 R35 / 09 D37 强制披露）")
 
     return name, code, stamp
 
