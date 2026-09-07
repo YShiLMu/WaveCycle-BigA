@@ -870,7 +870,7 @@ def main():
         ei = resolve_index(df, e, label + "终点")
         waves.append((label, si, ei, note, direction))
 
-    # ---- 外观规范警告（B2：浪级配色，警告不阻断出图）----
+    # ---- 外观规范（B2 浪级配色）：混层级为硬错误(拒绝出图)，缺白链/方向色为警告(不阻断)----
     def _lvl(lb):
         return str(lb).count("-") + 1
     if args.waves and args.path:
@@ -884,8 +884,9 @@ def main():
     for _idxs, labels in args.path:
         lv = {_lvl(l) for l in labels if l != ""}
         if len(lv) > 1:
-            print(f"[警告] 同一条 --path 内标签层级不一致 {sorted(lv)}（一条=一个浪链，勿混层级）",
-                  file=sys.stderr)
+            raise SystemExit(
+                f"[错误] 同一条 --path 内标签层级不一致 {sorted(lv)}——一条 --path 是一个浪链/一种颜色，"
+                f"请把大级别(无连字符)、第2层(1-1)、第3层(1-1-1)各自拆成独立 --path（勿混层级）")
 
     draw_chart(df, out_path, args.title, waves, args.invalid,
                current_price=args.current, fib_zones=args.fib, last_n=args.last,

@@ -195,6 +195,24 @@ def main(argv=None):
         png = os.path.join(chart_dir, fn)
         check("生成 %s" % fn, code == 0 and os.path.getsize(png) > 0, err.strip()[:200])
 
+    # ---- 2b. ew_chart.py --path 层级一致性：分层级正例通过 / 混层级硬拒绝 ----
+    print("== 2b. ew_chart.py --path 层级一致性（一条=一个浪链，混层级拒绝出图）==")
+    layered_png = os.path.join(chart_dir, "层级正例_全景.png")
+    code, out, err = run([sys.executable, os.path.join(HERE, "ew_chart.py"),
+                          "--csv", csv_path, "--out", layered_png, "--title", "层级正例",
+                          "--start", "0",
+                          "--path", "[I]@0,[II]@60",            # 第1级白链（无连字符）
+                          "--path", "1-1@0,1-2@60,1-3@110"])      # 第2级叠层（1连字符）
+    check("分层级多条 --path 正常出图", code == 0 and os.path.getsize(layered_png) > 0,
+          err.strip()[:200])
+    mixed_png = os.path.join(chart_dir, "混层级_应拒绝.png")
+    code, out, err = run([sys.executable, os.path.join(HERE, "ew_chart.py"),
+                          "--csv", csv_path, "--out", mixed_png, "--title", "混层级应拒绝",
+                          "--start", "0",
+                          "--path", "[I]@0,1-1@60"])              # 1级+2级 混一条 --path
+    check("混层级 --path 被拒绝(exit!=0 且提示层级)", code != 0 and "层级" in (out + err),
+          (out + err).strip()[:200])
+
     # ---- 3. embed_report_images.py：2 图标准模式 + 1 图防御模式 ----
     print("== 3. embed_report_images.py（2 图标准模式 + 1 图防御模式）==")
     for case, n_img in (("标准2图", 2), ("防御1图", 1)):
