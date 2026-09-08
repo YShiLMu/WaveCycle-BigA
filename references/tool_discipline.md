@@ -6,7 +6,7 @@
 > **定位**：把"分析者在调用脚本 / 处理数据时容易踩的坑"固化成明文纪律。本文件只讲**怎么调、怎么判断、怎么防呆**，不定义波浪规则（那是 `references/rules.md` / `references/guidelines.md`）与数据获取协议（那是 `references/data.md`）。
 >
 >
-> **总原则**：能用已入库脚本就别写临时脚本；能数值校验就别肉眼比对；调用脚本前先读 `--help` 或源码确认参数格式，**不要凭记忆**。
+> **总原则**：能用已入库脚本就别写临时脚本；能数值校验就别肉眼比对；**参数格式以第 2 节「参数快照」为准**，按表调用报错时才跑 `--help` 或读源码（`--help` 仍为最终权威）。
 
 ## 1. 数据与列序（最高优先级——一次错、全错）
 
@@ -22,6 +22,19 @@
 - **一条 `--path` = 一个连续浪链**：不同大级别 / 层级浪要拆分多条 `--path` 传；**同一条浪链内各子浪端点日期必须唯一**（重复日期会被 swings 明确报错）。
 - `swings.py`：`--path "标签@日期,…"` 把日期转成索引串（须为 swings 含影线极值，R20）；首点即起画点；给 `ew_chart --path` 用。
 - `preflight.py` 默认 compact（D40）：swings 只打最近 40 个摆动点、key_levels 前高/前低簇封顶 30 条，省略行数见输出披露行；要全量时显式 `--no-compact`（或 `--tail 0` / `--key-levels-args "--max-levels 0"`），**不要凭记忆假设输出是全量**。
+
+### 2.1 参数快照（build 自动生成，禁止手改）
+
+> 下列参数名由 build 从各脚本 `--help` 自动抓取（防漂移）；**取值格式与含义见各脚本 `--help`**，第 2 节已列出最易错的几条。
+
+<!-- CLI-PARAM-TABLE-BEGIN -->
+- **`ew_chart.py`**：`-h` `--csv` `--out` `--out-auto` `--title` `--waves` `--invalid` `--level` `--current` `--fib` `--last` `--start` `--gann` `--gann-auto-scale` `--gann-index` `--font-scale` `--theme` `--path` `--channel` `--pivot`
+- **`swings.py`**：`-h` `--csv` `--k` `--start` `--end` `--weekly` `--chart-args` `--tail` `--path` `--dow` `--fib`
+- **`key_levels.py`**：`-h` `--csv` `--shadow-ratio` `--trend-threshold` `--window` `--swing-k` `--cluster-tolerance` `--recent` `--gap-band` `--max-levels`
+- **`preflight.py`**：`-h` `--csv` `--source` `--fq` `--k` `--start` `--end` `--weekly` `--tail` `--no-dow` `--no-key-levels` `--key-levels-args` `--compact` `--no-compact`
+- **`rule_check.py`**：`-h` `--wave` `--dir`
+- **`score.py`**：`-h` `--scheme`
+<!-- CLI-PARAM-TABLE-END -->
 
 ## 3. 输出读取纪律
 
