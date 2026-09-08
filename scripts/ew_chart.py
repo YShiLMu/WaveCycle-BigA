@@ -428,8 +428,9 @@ def _draw_paths(ax, plot_df, base, paths, t, fs):
     sub_rows = []  # [(label, price, date, x)] 有序子浪端点序列
     for idxs, labels in paths:
         auto_seq = len(labels) == 1
-        # 层级色：按该路径首标签的层级取色（多级子浪叠加用颜色区分）
-        c = _level_color(labels[0], t)
+        # 层级色按首个非空标签取：首点可为空标签（表示起点/更大级别，不显示框标），
+        # 若用 labels[0] 会把空标签误判成第 1 层白，导致整条子浪链丢失层级配色。
+        c = _level_color(next((l for l in labels if l != ""), labels[0]), t)
         # 第一遍：过滤越界点，只留有效端点（峰谷判定依赖相邻有效端点，不能带洞）
         valid = []
         for i, idx in enumerate(idxs):
