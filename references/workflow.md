@@ -874,8 +874,8 @@
 
 **网页报告必须由模板生成**（核心流程，写死）：
 
-- 归档文件夹与标准文件名由 `scripts/init_archive.py` 创建并打印（命名唯一权威，禁止手工命名）；分析报告由 `scripts/gen_report_md.py`、网页报告由 `scripts/gen_report_web.py` 分别读 `assets/分析报告_report.md` / `assets/网页报告_web_report.html` 渲染：AI 只写 `data.json`（顶层 `fields`+`tables`+`简明分析说明` 结构化纯数据，模式见 `report_common.py` docstring），脚本完成字段替换、表格生成与简明分析说明渲染后输出到 stdout，**重定向只捕获 stdout（`> 文件名`），切勿加 2>&1**（`[OK]/[NEXT]` 提示走 stderr，加 2>&1 会把日志混进交付文档第一行），重定向为 init_archive 打印的标准文件名（**模板不进上下文**）；网页图区 2 个图片占位符（`{{主方案全景图路径}}`、`{{替代方案全景图路径}}`）留给 `scripts/embed_report_images.py` 注入 base64。
-- **禁止从零手写 HTML 结构**，禁止绕过 gen_report_web / gen_report_md 手工填模板或直接修改打包版模板；纯对话型 AI（无文件工具）按模板字段清单与最小结构骨架等价重建，并在输出头部注明"按模板结构等价重建"（清单与骨架见 SKILL.md「两种使用环境」）。
+- 归档文件夹与标准文件名由 `scripts/init_archive.py` 创建并打印（命名唯一权威，禁止手工命名）；分析报告由 `scripts/gen_report_md.py`、网页报告由 `scripts/gen_report_web.py` 分别读 `assets/分析报告_report.md` / `assets/网页报告_web_report.html` 渲染：AI 只写 `data.json`（顶层 `fields`+`tables`+`简明分析说明` 结构化纯数据，schema 见 SKILL.md §9.3），脚本完成字段替换、表格生成与简明分析说明渲染后输出到 stdout，**重定向只捕获 stdout（`> 文件名`），切勿加 2>&1**（`[OK]/[NEXT]` 提示走 stderr，加 2>&1 会把日志混进交付文档第一行），重定向为 init_archive 打印的标准文件名（**模板不进上下文**）；网页图区 2 个图片占位符（`{{主方案全景图路径}}`、`{{替代方案全景图路径}}`）留给 `scripts/embed_report_images.py` 注入 base64。
+- **禁止从零手写 HTML 结构**，禁止绕过 gen_report_web / gen_report_md 手工填模板或直接修改打包版模板；纯对话型 AI（无文件工具）按模板字段清单等价重建，并在输出头部注明"按模板结构等价重建"（清单见 SKILL.md「两种使用环境」）。
 - 归档后运行 `scripts/embed_report_images.py <归档文件夹>` 自动内嵌：`图表/` 下 PNG 转 base64（默认 2 张、单方案防御 1 张），填入 .html 的 `<img>` 占位符与 .md 的 `![说明](data:image/png;base64,...)`（md 查看器不支持 data URI 时加 `--md-keep-absolute` 回退绝对路径引用并在文末注明）；生成后自动校验——html 含等量 base64 图、无 `{{...图路径}}` 占位符残留、模板头部特征注释与 `class="pano-img"` 齐全；md 图片标记数与实际图表张数一致——**任一不通过以退出码 1 结束、禁止交付缺图文件**；校验不通过时从原始模板重新生成后再跑脚本，禁止手工粘贴 base64 或手工拼 HTML。
 - **禁读条款（防爆上下文）**：上述校验全部以 `embed_report_images.py` 退出码为准——交付文档内嵌 base64 后达 MB 级，**禁止 Read 验证 / 整读交付文档**（包括"抽查 base64 是否写入""确认渲染效果"）；需要确认时只看脚本输出与退出码。
 

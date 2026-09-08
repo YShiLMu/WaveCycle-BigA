@@ -19,12 +19,7 @@ description: 观复（WaveCycle）· 技术分析融合版——在 Elliott Wave
 
 ### 1.1 与 a-stock-data 的交接规则（Handoff Rules）
 
-两个 skill 同时触发时，按以下顺序执行，并把 a-stock-data 的读取范围限制到最小：
-
-1. **只读章节清单**：取数时只读 a-stock-data 的「端点路由速查」与「K 线相关章节」——§1.1 `tdx_client()`（`.bars()`）、§1.2 `tencent_quote()`、§1.3 `baidu_kline_with_ma()`、「备用源速查 & 降级策略」K 线行（全历史/分钟）。**禁止整篇加载其 SKILL.md（3000+ 行）**；研报、信号、资金面、新闻、公告、打板、期权、舆情等章节本 skill 不需要，一律不读。
-2. **职责边界**：a-stock-data 只管取数与防封（mootdx 库烂尾、BESTIP bug、东财限流、降级实现）；波浪规则（references/rules.md）、校验（references/checklists.md）、概率经验（references/guidelines.md）、报告（assets/）、复权口径与数据自检（references/data.md、references/workflow.md）一律以本 skill 为准；a-stock-data 返回的原始数据不构成任何数浪结论。
-3. **触发顺序**：先按 `references/data.md` 取数协议调用 a-stock-data → 取回数据后按本 skill 数据自检清单校验（references/workflow.md 第 1 步「数据自检」）→ 通过后再进入数浪流程；任一自检"不通过"退回重新取数或降级标注，禁止带病数浪。
-4. **口径唯一权威**：取数口径（函数映射、参数默认值、CSV 输出契约、复权默认与披露、降级链）以本 skill 的 `references/data.md` 为唯一权威；a-stock-data 只提供数据端点，不定义分析口径。
+两 skill 同时触发时，**只读** a-stock-data 的「端点路由速查」与「K 线相关章节」（§1.1 `tdx_client()`、§1.2 `tencent_quote()`、§1.3 `baidu_kline_with_ma()`、备用源 K 线行），**禁止整篇加载其 SKILL.md（3000+ 行）**；它只管取数与防封，取数口径与全部分析规则（规则/校验/概率/报告/复权/自检）以本 skill 为准，协议见 `references/data.md`，返回的原始数据不构成任何数浪结论。取数后先按 workflow 第 1 步数据自检，不通过即退回重取或降级标注，禁止带病数浪。
 
 ## 2. 核心约定（必须遵守）
 
@@ -42,7 +37,7 @@ description: 观复（WaveCycle）· 技术分析融合版——在 Elliott Wave
 
 ### 第 2 步 数浪
 
-找主要摆动 → 按**细分深度**（09 默认口径表 D37 / 06 R35）展开——**交互式（用户会话/可应答）必询硬前置：先询问用户**要"全部（每个第 2 层浪细分到第 3 层）"还是"默认 2 层"，**未获答复并登记（细分深度来源=用户确认-2层/用户确认-3层）前不得出图/出报告**；**非交互式（仅显式批处理/定时/CI 入口）默认 2 层并登记披露（非交互默认-2层）**，用户明确要 3 层才 3 层，禁止"非交互默认 3 层"；**硬性下限 ≥ 2 层 = 每个大级别浪（1-2-3-4-5 / A-B-C）都要展开第 2 层子浪（推5 x-1~x-5、调3 x-a/x-b/x-c），不只当前操作浪、禁止裸大级别**；第 1 层大级别用 1-2-3-4-5、回调段 A-B-C，第 2/3 层用数字点分 1-1/1-1-1，每层端点取 swings 含影线极值 R20，深度必在报告【1 分析前提】披露（含细分深度来源；见 `references/workflow.md` 第 2 步 2.4b）→ 枚举主备数法 → 逐条执行 Rule Check（**数值规则 R5/R6/R7/R17/R29 必跑 `scripts/rule_check.py`**，端点价取 swings 极端价位，存在违反退出码 1，见 `references/defaults.md` D31；形态类规则由模型核对）→ 执行 Guideline Check → 标注失效价位 → 概率排序（见 `references/workflow.md` 第 2 步；检查表见 `references/checklists.md`）。
+找主要摆动 → 按**细分深度**（D37/R35）展开：**交互式必询**"全部（3 层）/默认 2 层"并登记来源，**未确认并登记前不得出图/出报告**；非交互式（仅显式批处理/定时/CI）默认 2 层并披露；**硬性下限 ≥ 2 层**（每个大级别浪都要展开第 2 层子浪，禁止裸大级别）；层级用 1-2-3-4-5 / A-B-C / 1-1 / 1-1-1，端点取 swings 含影线极值 R20，深度在报告【1 分析前提】披露（细则见 `references/workflow.md` 第 2 步 2.4b）→ 枚举主备数法 → 逐条执行 Rule Check（**数值规则 R5/R6/R7/R17/R29 必跑 `scripts/rule_check.py`**，端点价取 swings 极端价位，违反退出码 1，见 `references/defaults.md` D31；形态类规则由模型核对）→ 执行 Guideline Check → 标注失效价位 → 概率排序（见 `references/workflow.md` 第 2 步；检查表见 `references/checklists.md`）。
 
 ### 第 3 步 验证数浪
 
@@ -50,12 +45,12 @@ description: 观复（WaveCycle）· 技术分析融合版——在 Elliott Wave
 
 ### 第 4 步 生成报告
 
-按 8 章节结构输出两份交付文档（`分析报告.md` 由 `scripts/gen_report_md.py --data data.json` 渲染、`网页报告.html` 由 `scripts/gen_report_web.py --data data.json` 渲染，模板不进上下文，data.json 模式见 `report_common.py` docstring）；归档文件夹与标准文件名由 `scripts/init_archive.py` 创建（命名唯一权威），输出重定向为标准文件名。
+按 8 章节结构输出两份交付文档（`分析报告.md` 由 `scripts/gen_report_md.py --data data.json` 渲染、`网页报告.html` 由 `scripts/gen_report_web.py --data data.json` 渲染，模板不进上下文，data.json schema 见本文 §9.3）；归档文件夹与标准文件名由 `scripts/init_archive.py` 创建（命名唯一权威），输出重定向为标准文件名。
 报告与网页归档到 `<项目根目录>/分析输出/<标的名称_代码_YYYYMMDD_HHMM>/`（归档规范见本文第 5 节「输出归档」）。
 生成后运行 `scripts/embed_report_images.py <归档文件夹>`，自动把 `图表/` 下 PNG 转 base64 内嵌进 .md 与 .html（md 在查看器不支持 data URI 时可用 `--md-keep-absolute` 回退绝对路径并注明），**校验以该脚本退出码为准**（0 = 通过才交付；交付文档内嵌 base64 后达 MB 级，**禁止 Read 验证 / 整读交付文档**，见 `references/workflow.md` 第 4 步第 2.3 节）。
 网页报告由 `scripts/gen_report_web.py --data data.json` 渲染 `assets/网页报告_web_report.html`（`{{字段}}` 全部替换、表格按列头生成，图区 2 个图片占位符由 `scripts/embed_report_images.py` 注入 base64），禁止从零重写 HTML、禁止手工填占位符；非模板生成判"不通过"（自检硬项见本文第 6 节，字段清单与骨架见本文第 9 节）。
 
-**K 线图 + 浪型标注**：获取行情数据后、报告定稿前，用 `scripts/ew_chart.py` 为主方案与替代方案各绘制**一张全景图**（默认共 2 张；极端情况仅 1 个合法方案时防御性输出主方案 1 张，由 `scripts/embed_report_images.py` 单方案防御模式内嵌、替代方案图区标记不适用；第 3 个方案只文字呈现不出图；禁止主备混叠，见 `references/rules.md` R23）：全景图从**该方案最大分析级别（大级别框架，如更大级别[1]-[5]、月K[1]-[3]）的第 1 浪起点**直接起画（主方案从主方案最大级别第 1 浪起点、替代方案从替代方案最大级别第 1 浪起点，用 `--start` 标定起画点；**第 1 浪起点必须是该方案大级别结构的第 1 浪——不得取当前操作级别（如日线）的子浪起点，例：CS创新药主方案为月K[3]，其全景图第 1 浪起点取月K[1]起点（2024-09-24，1339.47）而非日K前置楔形(1)起点（2026-06-09）**；数据起点早于该起点时其左侧保留作背景但不作起画点，晚于该起点时观察窗口从该起点开始，图注标注"起点至最新"），连完整大级别结构（1-2-3-4-5 / A-B-C / W-X-Y）到当前，标注大级别结构与对应大级别失效价位；**子浪按细分深度叠加**（09 默认口径表 D37）——**默认 2 层 = 每个大级别浪的第 2 层子浪（推5 x-1~x-5、调3 x-a/x-b/x-c）都用多条 `--path` 叠加（不只当前浪），禁止"只有大级别、无子浪"的裸图**；用户明确要"全部"深度才叠第 3 层（1-1-1）；第 2/3 层子浪（数字点分 1-1、1-1-1）按层级配色（**底部文本块只列大级别+第 2 层浪，第 3 层 1-1-1 及更深只画线、不进底部文本，避免图过高**）；`--waves` 只作大级别底图，子浪必须用 `--path`，禁止仅用 `--waves` 的长直线充当子浪；未叠加的子浪细节经网页交互缩放读取，具体点位见报告数浪表/结构说明。图标题含分析级别与时间范围（`references/rules.md` R22）；浪段标注按 R23；失效价位红色虚线并注明规则编号（R19、R20）。图表用高清输出（dpi ≥ 150）；输出路径用 `--out-auto "<图表目录>|主方案|全景"`（方案∈主方案/替代方案、图型∈全景）按 embed 固定命名生成，禁止手工另起名。PNG 只用于嵌入交付物，保存后必须验证文件存在且可渲染（自检清单见 `references/workflow.md` 第 4 步第 2.1 节）。
+**K 线图 + 浪型标注**：用 `scripts/ew_chart.py` 为每个方案各绘**一张全景图**（默认 2 张；单方案防御 1 张；第 3 方案不出图；禁止主备混叠，R23）；起画点取该方案**最大分析级别**的第 1 浪起点（`--start` 标定，不得取当前操作级别子浪起点），子浪按细分深度用**多条 `--path`** 叠加（默认 2 层须铺满每个大级别浪的第 2 层子浪，禁止裸图），输出用 `--out-auto "<图表目录>|主方案|全景"`；图标题含级别与时间范围（R22）、失效价位红虚线注规则编号（R19/R20）。**完整绘图规范唯一权威见 `references/workflow.md` 第 4 步第 2.1 节**；PNG 保存后以脚本退出码验证可渲染，禁止 Read 交付文档（MB 级）。
 
 ### 第 5 步 更新数浪
 
@@ -90,28 +85,17 @@ description: 观复（WaveCycle）· 技术分析融合版——在 Elliott Wave
 | 规则冲突与形态边界裁决 | `references/rule_conflicts.md` |
 | 道氏理论（趋势方向前提层、DO 信号、指数互证口径） | `references/dow.md` |
 | 江恩理论（时间/价位验证层、GN 信号、共振判定） | `references/gann.md` |
-| 网页报告输出 | `assets/网页报告_web_report.html` |
+| 网页报告输出 | 由 `scripts/gen_report_web.py` 读取模板渲染，**AI 不读该模板** |
 
 > **打包转换约定**：`references/` 与 `assets/` 均由仓库 01–05 源文件转换生成（仅编号与路径口径不同）；维护性章节（转换规则、验收清单等）不打包，打包版文件头注明完整版见源；修改必须改源，禁止直接修改打包版。
 
 ## 5. 模板与输出（assets）
 
-**交付物规范（每次分析只交付两个文档）**：
+**每次分析只交付两个文档**：`分析报告_<标的>_<代码>_<时间>.md`（按 `assets/分析报告_report.md` 模板，交易计划/失效价位/更新跟踪分别并入第 6/5/8 章）与 `网页报告_<标的>_<代码>_<时间>.html`（由 `scripts/gen_report_web.py` 渲染 `assets/网页报告_web_report.html`，禁止从零重写）。两份文档的主备方案、失效价位、概率排序、简洁总结、关键价位表必须一致；**不再生成**独立交易计划/失效追踪/变更日志/日线 CSV/独立 PNG。
 
-- 归档位置：`<项目根目录>/分析输出/<标的名称_代码_YYYYMMDD_HHMM>/`（`<项目根目录>` 以运行时工作区根目录为准；归档规范见本文第 5 节「输出归档」）；
-- **分析报告_<标的>_<代码>_<时间>.md**：按 `assets/分析报告_report.md` 模板输出；交易计划（第 6 章）、失效价位（第 5 章）、更新与跟踪（第 8 章）内容完整并入，不再单独成文件；浪型图由 `scripts/embed_report_images.py` 自动 base64 内嵌（文档自包含）；查看器不支持 data URI 时回退绝对路径引用 `分析输出/<文件夹名>/图表/<PNG>` 并注明（见 references/workflow.md 第 4 步第 2.3 节）；
-- **网页报告_<标的>_<代码>_<时间>.html**：由 `scripts/gen_report_web.py --data data.json` 渲染 `assets/网页报告_web_report.html` 生成（`{{字段}}` 全部替换、5 张表格由脚本按列头生成、简明分析说明由对象渲染；图区保留 `{{主方案全景图路径}}` 等 2 个图片占位符，由 `scripts/embed_report_images.py` 注入 base64，禁止手工填路径；单方案防御模式时替代方案图区由脚本标记为不适用），禁止从零重写 HTML 结构；
-- 两份文档中主备方案、失效价位、概率排序、简洁总结、关键价位表必须一致。
+**归档（必须遵守）**：统一归档到**当前项目根目录** `分析输出/<标的名称_代码_YYYYMMDD_HHMM>/`（`scripts/init_archive.py` 创建，命名唯一权威；Windows 禁止冒号，如 `科创50_1B0688_20260809_1522`）；文件夹内只放上述两份文档，浪型图 PNG 生成到 `图表/` 子目录、由 `embed_report_images.py` 内嵌 base64，**内嵌后 `图表/` 与 PNG 原图永久保留、禁止清理**；同一标的更新写回原文件夹，确需重开时新建带新时间戳文件夹并在旧报告第 8 章登记去向。
 
-**不再生成**：独立交易计划.md、失效追踪.md、变更日志.md、日线 CSV、独立 PNG——浪型图仅作内嵌素材存于该文件夹 `图表/` 子目录。
-
-- `assets/分析报告_report.md`：第 4 步报告输出时复制填写（**交付文档**）；
-- `assets/网页报告_web_report.html`：生成分析报告时，复制该模板，填入数据与简洁总结后交付网页（浪型图占位符由 `scripts/embed_report_images.py` 注入 base64；**交付文档**，含主备方案标签页与末尾总结，见 `references/workflow.md` 第 4 步输出结构）；
-- `assets/每日复盘_daily_review.md`、`assets/失效追踪_invalidation.md`、`assets/交易计划_trade_plan.md`：**仅作内部工作底稿**（盘中草稿、跨周期失效跟踪、仓位草稿），产出**不进入 `分析输出/` 归档、不作为交付物**；需要交付的内容分别并入分析报告.md 对应章节（交易计划→第 6 章、失效价位与更新跟踪→第 5/8 章、复盘更新→第 8 章）。
-
-模板不加载进上下文；交付文档复制到归档文件夹填写，工作底稿复制到临时/工作目录填写、不进入 `分析输出/`。
-
-**输出归档（必须遵守）**：所有分析输出统一归档到**当前项目根目录** `分析输出/`（即运行本次分析的工作区根目录，禁止写入技能安装目录或系统目录）。**一次分析 = 一个独立子文件夹**，命名 `标的名称_代码_YYYYMMDD_HHMM`（本地时间 4 位；Windows 文件夹名禁止冒号，如 `科创50_1B0688_20260809_1522`）；归档文件夹由 `scripts/init_archive.py` 创建（命名唯一权威），浪型图由 `ew_chart.py --out-auto` 按 embed 固定命名输出；文件夹内**只放两个交付文档**（分析报告_*.md 与 网页报告_*.html），浪型图 PNG 为临时产物，生成后由 `embed_report_images.py` 内嵌 base64 即清除，交付只留两份文档（归档无 `图表/` 目录）；**不生成**原始行情 CSV、独立的失效追踪、交易计划、变更日志文件（内容分别并入报告第 5/6/8 章）。同一标的的后续更新写回原文件夹；确需从头重开时新建带新时间戳的文件夹，并在旧文件夹分析报告.md 第 8 章登记去向。
+**模板与工作底稿**：`assets/` 下模板一律**不加载进上下文**（由脚本读取）；`每日复盘/失效追踪/交易计划` 三个 md 仅作内部工作底稿，产出不进 `分析输出/`、不作为交付物。
 
 ## 6. 校验与报告规范
 
@@ -131,20 +115,11 @@ description: 观复（WaveCycle）· 技术分析融合版——在 Elliott Wave
 
 ## 8. 输出结构（简明分析说明 → 浪型图 → 8 章节）
 
-**两份交付物同源自一份 data.json**：`分析报告.md` 由 `scripts/gen_report_md.py` 渲染、`网页报告.html` 由 `scripts/gen_report_web.py` 渲染，共用同一份 `data.json`（顶层 `fields`+`tables`+`简明分析说明`），不新增/不放宽分析结论，内容天然一致。
+两份交付物同源自一份 `data.json`。按以下顺序组织：
 
-按以下顺序组织：
-
-1. **简明分析说明（唯一摘要，置于第 1 章之前）**：由顶层 `简明分析说明` 对象渲染成 4 行（`report_common.py` 的 render_jianming），**只写主方案**：
-   - 主方案：大级别⟨X⟩浪，价1/日1→价2/日2-价3/日3-…（最后一个为终点）
-   - 小级别：目前处于⟨X⟩浪的⟨Y⟩浪，点位日期和上面一样
-   - Neely：得分+⟨n⟩，⟨强度⟩
-   - 总结：目前偏多/空
-   - 主备双方案（见 references/rules.md R24）由报告正文【3 替代方案】承接；摘要只写主方案，不违反 R24。
-2. **浪型标注图**：主方案与替代方案各一张全景图（默认共 2 张；极端情况单方案防御 1 张——主方案全景；工作流输出约定，见 references/workflow.md 第 4 步第 2.1 节），由 `scripts/ew_chart.py` 绘制，`scripts/embed_report_images.py` 转 base64 内嵌进 .md 与 .html（自包含交付；md 在查看器不支持 data URI 时可回退绝对路径）；标题含级别与时间范围（references/rules.md R22）、浪段标注不混用（R23）、失效价位红色虚线 + 规则编号（R19、R20）、标出支撑/阻力与当前价格。
-3. **8 章节正文**：分析前提 → 主方案（含数浪表 + Neely 新增参考）→ 替代方案 → 概率排序与理由 → 失效价位清单 → 交易计划建议 → 风险提示 → 更新与跟踪；表格与文本均由同一份 data.json 渲染。
-
-概率表述用"大概率/倾向于/通常"，禁止"必然/一定/绝对"（见 references/guidelines.md 前言）。
+1. **简明分析说明**（唯一摘要，置于第 1 章之前）：由顶层 `简明分析说明` 渲染成 4 行（主方案 / 小级别 / Neely / 总结），**只写主方案**——主备双方案由正文【3 替代方案】承接（R24）；字段见 §9.3。
+2. **浪型标注图**：主方案与替代方案各一张全景图（默认 2 张、单方案防御 1 张），由 `ew_chart.py` 绘制、`embed_report_images.py` 内嵌；标注要求见 §3 第 4 步与 R19/R20/R22/R23。
+3. **8 章节正文**：分析前提 → 主方案（含数浪表 + Neely 参考）→ 替代方案 → 概率排序与理由 → 失效价位清单 → 交易计划建议 → 风险提示 → 更新与跟踪；全部由同一份 data.json 渲染。
 
 ## 9. 两种使用环境（网页报告生成）
 
@@ -152,11 +127,11 @@ description: 观复（WaveCycle）· 技术分析融合版——在 Elliott Wave
 
 ### 9.1 可读写文件的 Agent（主路径）
 
-用 `scripts/gen_report_web.py --data data.json` 渲染（网页唯一生成入口）：AI 只写 `data.json`（顶层 `fields`+`tables`+`简明分析说明` 结构化纯数据，模式见 `report_common.py` docstring），脚本读 `assets/网页报告_web_report.html` 完成全部 `{{字段}}` 替换、5 张表格生成与简明分析说明渲染后输出到 stdout，**重定向只捕获 stdout（`> 文件名`），切勿加 2>&1**（脚本的 `[OK]/[NEXT]` 提示走 stderr，加 2>&1 会把日志混进交付文档第一行），重定向为 init_archive 打印的标准文件名（**模板不进上下文**）；图区 2 个图片占位符保留给 `scripts/embed_report_images.py` 注入 base64 → 校验模板头部特征注释与结构标记齐全、无 `{{字段}}` 残留（脚本已内置）。禁止从零手写 HTML 结构，禁止在非模板文件上填充，禁止绕过 gen_report_web 手工填占位符。
+用 `scripts/gen_report_web.py --data data.json` 渲染（网页唯一生成入口）：AI 只写 `data.json`（顶层 `fields`+`tables`+`简明分析说明` 结构化纯数据，schema 见本文 §9.3），脚本读 `assets/网页报告_web_report.html` 完成全部 `{{字段}}` 替换、5 张表格生成与简明分析说明渲染后输出到 stdout，**重定向只捕获 stdout（`> 文件名`），切勿加 2>&1**（脚本的 `[OK]/[NEXT]` 提示走 stderr，加 2>&1 会把日志混进交付文档第一行），重定向为 init_archive 打印的标准文件名（**模板不进上下文**）；图区 2 个图片占位符保留给 `scripts/embed_report_images.py` 注入 base64 → 校验模板头部特征注释与结构标记齐全、无 `{{字段}}` 残留（脚本已内置）。禁止从零手写 HTML 结构，禁止在非模板文件上填充，禁止绕过 gen_report_web 手工填占位符。
 
 ### 9.2 纯对话型 AI（无文件工具）
 
-仅当 AI **无文件读写能力、无法执行 `scripts/gen_report_web.py` / `gen_report_md.py`** 时，才按 9.3「模板字段清单」+ 9.4「最小结构骨架」等价重建同构 HTML，并在输出头部注明"按模板结构等价重建"。重建必须保留：模板头部特征注释（"波浪理论网页报告模板"）、`.tabs`/`.tab-panel` 主备切换、`.viewport` + `.pano-img` 查看器结构、8 章节骨架（含表格区）、页脚；交互 JS 可保留模板等价实现（缩放/拖拽/复位），无交互要求时可简化为静态展示并注明。
+仅当 AI **无文件读写能力、无法执行 `scripts/gen_report_web.py` / `gen_report_md.py`** 时，才按 9.3「模板字段清单」等价重建同构 HTML 并注明"按模板结构等价重建"；重建必须保留模板头部特征注释（"波浪理论网页报告模板"）、`.tabs`/`.tab-panel` 主备切换、`.viewport` + `.pano-img` 查看器结构、8 章节骨架与页脚。
 
 ### 9.3 模板字段清单（与 `assets/网页报告_web_report.html` / `assets/分析报告_report.md` 一一对应，由 report_common.py 校验；data.json 按顶层 `fields`+`tables`+`简明分析说明` 提供）
 
@@ -167,42 +142,6 @@ description: 观复（WaveCycle）· 技术分析融合版——在 Elliott Wave
 
 > 注：模板头部注释里的「字段名/表名」只是通用说法，不是可填充字段；实际可填充字段为上列文本字段(13) + 简明分析说明对象 + 5 个表格占位符 + 2 个图片占位符。
 
-### 9.4 最小结构骨架（≤32 行，精简注释形式）
+### 9.4 无脚本/无绘图环境（降级交付）
 
-```html
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{标的名称}} · Elliott Wave 分析报告</title>
-<!-- 模板头部特征注释：波浪理论网页报告模板（可复用）——重建必须保留 -->
-</head>
-<body><div class="container">
-  <header><h1>{{标的名称}}（{{标的代码}}）· Elliott Wave 分析</h1>
-    <div class="meta"><span>{{分析日期}}</span><span>{{分析级别}}</span><span>{{收盘价}}</span></div></header>
-  <section><h2>简明分析说明</h2><p>{{简明分析说明}}</p></section>
-  <section><h2>1. 分析前提</h2>{{分析前提表}}</section>
-  <section><h2>2. 主方案</h2><p>{{主方案说明}}</p>{{主方案数浪表}}
-    <h3>Neely 新增参考</h3>{{neely参考表}}<p>{{主方案失效}}</p></section>
-  <section><h2>3. 替代方案</h2><p>{{替代方案}}</p></section>
-  <section><h2>浪型标注图</h2>
-    <div class="tabs"><button class="tab-btn active">主方案</button><button class="tab-btn">替代方案</button></div>
-    <div class="tab-panel active"><div class="viewport"><img class="pano-img" src="{{主方案全景图路径}}"></div></div>
-    <div class="tab-panel"><div class="viewport"><img class="pano-img" src="{{替代方案全景图路径}}"></div></div>
-  </section>
-  <section><h2>4. 概率排序与理由</h2><p>{{概率说明}}</p>{{八因子表}}<p>{{概率结论}}</p></section>
-  <section><h2>5. 失效价位清单</h2>{{失效价位表}}</section>
-  <section><h2>6. 交易计划建议</h2><p>{{交易计划}}</p></section>
-  <section><h2>7. 风险提示</h2><p>{{风险提示}}</p></section>
-  <section><h2>8. 更新与跟踪</h2><p>{{更新跟踪}}</p></section>
-  <footer><p>{{数据来源}} ｜ {{生成时间}}</p></footer>
-</div></body>
-</html>
-```
-
-### 9.5 无脚本/无绘图环境（降级交付）
-
-无 Python 运行环境（无法执行 `scripts/` 下脚本）时，本次分析整体降级为**参考级**，并显著披露：
-
-- **浪型图降级**：以"文字结构图 + 价位标注表"呈现（如"1（100→160）→ 2（160→130）→ 3（130→220）…"，价位按极端价位标注，见 references/rules.md R20），并注明"环境受限，未按模板出图，结构仅供示意"；
-- **锚点降级**：`scripts/key_levels.py` 无法执行，R32 的脚本产出要求不满足——按 references/defaults.md D27 口径人工提取四类锚点，并在报告【1 分析前提】显著标注"锚点未脚本产出（环境受限），置信度下调"；锚点只作参考，禁止作为唯一失效价位依据；
-- **交付降级**：网页报告按 9.2 等价重建；分析报告与网页报告均在头部显著标注降级原因；降级版结论不进交易计划执行仓位（按 references/guidelines.md G27 背离处理，强制观望）。
+无 Python 运行环境时整体降级为**参考级**并在报告头部显著披露：浪型图改"文字结构图 + 价位标注表"呈现（价位按极端价位 R20 标注）并注明"环境受限，未按模板出图，结构仅供示意"；`scripts/key_levels.py` 无法执行时按 `references/defaults.md` D27 人工提取四类锚点、标注"锚点未脚本产出（环境受限），置信度下调"（禁止作为唯一失效价位依据）；网页报告按 9.2 等价重建；降级版结论不进交易计划执行仓位（按 `references/guidelines.md` G27 强制观望）。
