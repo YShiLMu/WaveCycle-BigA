@@ -83,7 +83,7 @@ description: 观复（WaveCycle）· 技术分析融合版——在 Elliott Wave
 | 比率目标与共振 | `references/fibonacci.md` |
 | 蜡烛图（K 线形态库与信号确认） | `references/candlestick.md` |
 | 逐条校验清单（含蜡烛图信号） | `references/checklists.md` |
-| 工作流细节与交接格式 | `references/workflow.md` |
+| 工作流细节与交接格式（按子步读取，行号见 workflow.md 头部目录） | `references/workflow.md` |
 | 项目默认口径（须披露的量化约定） | `references/defaults.md` |
 | A 股数据获取协议（函数映射、默认参数、CSV 契约、降级链） | `references/data.md` |
 | 执行纪律与工具使用（防呆：列序重排/CLI 参数/输出读取/时间戳单一来源） | `references/tool_discipline.md` |
