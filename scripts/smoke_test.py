@@ -169,6 +169,15 @@ def main(argv=None):
     check("坏数据（日期乱序）被数据自检拦截", code != 0 and "数据自检失败" in (out + err),
           (out + err).strip()[:200])
 
+    # --max-levels 封顶 + 截断披露（D40：按触及次数降序、同次数按距收盘升序截断）
+    code, out, err = run([sys.executable, os.path.join(HERE, "key_levels.py"),
+                          "--csv", csv_path, "--max-levels", "3"])
+    n_kept = len([ln for ln in out.splitlines()
+                  if re.match(r"\s+(前高|前低) [\d.]+ —— 触及", ln)])
+    check("--max-levels 3 封顶生效（保留 ≤3 条）", code == 0 and 0 < n_kept <= 3,
+          out.strip()[:150])
+    check("--max-levels 截断披露省略行数", "--max-levels 3：已省略" in out, out.strip()[-200:])
+
     # ---- 2. ew_chart.py ----
     print("== 2. ew_chart.py（2 张标准图[全景]：中文标题/浪段方向/失效价位/江恩自动刻度）==")
     charts = {
@@ -502,6 +511,16 @@ def main(argv=None):
     check("data_check 不通过即终止（exit 1，不跑 swings）",
           code == 1 and "preflight 终止" in out and "preflight 2/3" not in out,
           out.strip()[-200:])
+    # compact 默认开启（D40）与 --no-compact 全量
+    code, out, err = run([sys.executable, os.path.join(HERE, "preflight.py"),
+                          "--csv", csv_path, "--source", "合成数据", "--fq", "qfq"])
+    check("compact 默认开启并披露口径", code == 0 and "compact 默认口径" in out,
+          (out + err).strip()[-200:])
+    code, out, err = run([sys.executable, os.path.join(HERE, "preflight.py"),
+                          "--csv", csv_path, "--source", "合成数据", "--fq", "qfq",
+                          "--no-compact"])
+    check("--no-compact 关闭紧凑（无 compact 口径行）",
+          code == 0 and "compact 默认口径" not in out, (out + err).strip()[-200:])
 
     # ---- 13. ew_chart._seg_direction 判向口径直测 ----
     print("== 13. ew_chart._seg_direction（R20 极端价位判向口径）==")

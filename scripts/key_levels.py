@@ -19,6 +19,7 @@ volume ≥ 0（如有）、日期升序无重复（workflow 第 1 步 1.5 口径
     python key_levels.py --csv data.csv [--shadow-ratio 2.0]
                          [--trend-threshold 0.05] [--window 0] [--swing-k 3]
                          [--cluster-tolerance 0.001] [--recent 250] [--gap-band 0.15]
+                         [--max-levels 30]
 
 输出过滤（默认开启；被过滤的数量均在输出中披露一行，禁止静默丢弃，
 需要全量考古时把参数设为 0 即可取回）：
@@ -27,6 +28,10 @@ volume ≥ 0（如有）、日期升序无重复（workflow 第 1 步 1.5 口径
                    仍生效判定相关性
     --gap-band P   跳空缺口只输出"区间中点距最新收盘 ±P 以内"的缺口（默认
                    0.15，0 = 不过滤）；远价缺口对当前数浪无锚定意义
+    --max-levels N 前高/前低簇封顶 N 条（默认 30，0 = 全量）：截断前先按触及
+                   次数降序、同次数按距最新收盘升序重排再取前 N 条——避免按
+                   价格排序截断系统性丢掉低价位支撑/压力位；截断时打印省略
+                   提示（本封顶写在本体、对所有调用方生效，不只 preflight）
 
 CSV 列：date,open,high,low,close[,volume]（date 兼容 YYYY-MM-DD 与 YYYYMMDD 两种格式）。
 """
@@ -225,6 +230,10 @@ def main(argv=None):
                     help="前高/前低过滤：只输出最近触及落在最近 N 根以内的簇（默认 250，0 = 不过滤输出全量）")
     ap.add_argument("--gap-band", type=float, default=0.15,
                     help="跳空缺口过滤：只输出区间中点距最新收盘 ±该比例以内的缺口（默认 0.15，0 = 不过滤输出全量）")
+    ap.add_argument("--max-levels", type=int, default=30,
+                    help="前高/前低簇封顶条数（默认 30，0 = 全量）：截断前先按触及次数降序、"
+                         "同次数按距最新收盘升序重排再取前 N 条，避免按价格排序截断系统性"
+                         "丢掉低价位支撑/压力；截断时打印省略提示")
     args = ap.parse_args(argv)
 
     df = load_ohlc(args.csv)
@@ -239,6 +248,14 @@ def main(argv=None):
         kept = [lv for lv in swing_levels if lv["last"] >= cutoff]
         swing_dropped = len(swing_levels) - len(kept)
         swing_levels = kept
+    ml_dropped = 0
+    if args.max_levels > 0 and swing_levels:
+        # 截断选择排序（硬性）：触及次数降序 → 同次数按距最新收盘升序，
+        # 避免沿用价格降序截断时系统性丢掉低价位支撑/压力位
+        swing_levels.sort(key=lambda x: (-x["touches"], abs(x["center"] - last_close)))
+        if len(swing_levels) > args.max_levels:
+            ml_dropped = len(swing_levels) - args.max_levels
+            swing_levels = swing_levels[:args.max_levels]
     if not swing_levels:
         print("  （无）")
     for lv in swing_levels:
@@ -248,6 +265,10 @@ def main(argv=None):
     if swing_dropped:
         print("  （--recent %d：已省略 %d 条最近触及在最近 %d 根以前的簇；传 --recent 0 查看全量）"
               % (args.recent, swing_dropped, args.recent))
+    if ml_dropped:
+        print("  （--max-levels %d：已省略 %d 条——按触及次数降序、同次数按距最新收盘升序截断，"
+              "被省略者触及次数均不高于保留者；传 --max-levels 0 查看全量）"
+              % (args.max_levels, ml_dropped))
 
     print("\n== 2. 跳空缺口 ==")
     gaps = detect_gaps(df)

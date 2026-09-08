@@ -15,6 +15,13 @@
     python preflight.py --csv data.csv --source 腾讯fqkline --fq qfq
                         [--k 5] [--start 日期] [--end 日期] [--weekly]
                         [--no-dow] [--no-key-levels] [--key-levels-args "..."]
+                        [--compact / --no-compact]
+
+紧凑模式（--compact，默认开启）：swings 只打印最近 40 个摆动点（--tail 40，
+省略行数由 swings 披露）；key_levels 前高/前低簇封顶 30 条（key_levels 本体
+口径，按触及次数降序、同次数按距最新收盘升序截断）。--no-compact 取全量
+（swings 不加 --tail、key_levels 补 --max-levels 0，考古/复核用）；显式
+--tail 与 --key-levels-args 优先于紧凑默认。
 
 --key-levels-args 原样透传给 key_levels.py（如补充口径
 "--trend-threshold 1.0 --window 250"）。输出为各脚本的 stdout 顺序拼接。
@@ -56,6 +63,11 @@ def main(argv=None):
     ap.add_argument("--key-levels-args", default="",
                     help="透传 key_levels.py 的附加参数（一个字符串，如 \"--trend-threshold 1.0\"；"
                          "按空格切分，不支持含空格的参数值）")
+    ap.add_argument("--compact", dest="compact", action="store_true", default=True,
+                    help="紧凑模式（默认开启）：swings 只打印最近 40 个摆动点、key_levels 前高/前低簇"
+                         "封顶 30 条（省略行数均在输出中披露；显式 --tail / --key-levels-args 优先）")
+    ap.add_argument("--no-compact", dest="compact", action="store_false",
+                    help="关闭紧凑模式：swings 全量摆动点 + key_levels 簇全量（考古/复核用）")
     args = ap.parse_args(argv)
 
     print("== preflight 1/3：data_check（数据自检 + 四要素，D28）==")
@@ -79,8 +91,10 @@ def main(argv=None):
         sw_args += ["--end", args.end]
     if args.weekly:
         sw_args.append("--weekly")
-    if args.tail:
+    if args.tail is not None:
         sw_args += ["--tail", str(args.tail)]
+    elif args.compact:
+        sw_args += ["--tail", "40"]  # compact 默认：只打印最近 40 个摆动点
     if not args.no_dow:
         sw_args.append("--dow")
     code = run_script("swings.py", sw_args)
@@ -93,11 +107,16 @@ def main(argv=None):
         kl_args = ["--csv", args.csv]
         if args.key_levels_args:
             kl_args += args.key_levels_args.split()
+        if not args.compact and "--max-levels" not in args.key_levels_args:
+            kl_args += ["--max-levels", "0"]  # --no-compact：簇全量（考古/复核）
         code = run_script("key_levels.py", kl_args)
         if code != 0:
             print("\n[preflight 终止] key_levels 失败。")
             return code
 
+    if args.compact:
+        print("\n（compact 默认口径：swings --tail 40、key_levels --max-levels 30，省略行数见各节披露行；"
+              "全量用 --no-compact，或单项 --tail 0 / --key-levels-args \"--max-levels 0\"）")
     print("\n== preflight 完成：分析前提就绪，可进入 02 数浪"
           "（趋势方向与大级别框架由模型按道氏读数 + 结构判定输出，锚点禁反转已定方向，R32）==")
     return 0

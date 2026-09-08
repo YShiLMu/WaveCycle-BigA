@@ -308,7 +308,9 @@ def main():
     dow_seq = [(idx, date, price, kind) for idx, date, price, kind, _ in out] \
         if args.dow else None
 
+    tail_dropped = 0
     if args.tail:
+        tail_dropped = max(0, len(out) - args.tail)
         out = out[-args.tail:]
 
     mode = "周线聚合（摆动=周内极端价所在交易日）" if args.weekly else "日线"
@@ -323,6 +325,9 @@ def main():
             seg_txt = "  自上一点 %s(%s) %+.1f%%" % (prev[1], fmt_price(prev[2]), chg)
         print("  idx=%-5d %s  %s %10s%s" % (idx, date, kind, fmt_price(price), seg_txt))
         prev = (idx, date, price)
+    if tail_dropped:
+        print("  （--tail %d：已省略 %d 条更早摆动点；传 --tail 0 查看全量）"
+              % (args.tail, tail_dropped))
 
     if args.dow:
         sig = significant_filter(dow_seq)
