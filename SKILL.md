@@ -1,6 +1,6 @@
 ---
 name: wavecycle
-description: 观复（WaveCycle）· 技术分析融合版——在 Elliott Wave（艾略特波浪理论）数浪之上叠加道氏理论（趋势前提）、江恩理论（时间/价位验证）与蜡烛图（K 线信号确认）交叉验证：声明分析级别、数浪、按 Rule 与 Guideline 校验、给出主备方案与独立失效价位、八因子概率排序与共振状态、输出报告与交易计划。A 股行情可用 a-stock-data 获取，其他市场需用户提供数据或图表。
+description: 观复（WaveCycle）· 艾略特波浪数浪叠加道氏/江恩/蜡烛图交叉验证：声明级别、主备数浪、失效价位、八因子概率排序、报告与交易计划；A 股用 a-stock-data 取数。
 ---
 
 # Elliott Wave 分析（Elliott Wave Analysis）
