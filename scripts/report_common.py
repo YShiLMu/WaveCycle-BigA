@@ -16,6 +16,9 @@ data.json 模式（顶层键）：
     }
 细分深度 2/3 必填；细分深度来源（用户确认-2层/用户确认-3层/非交互默认-2层）必填且与深度匹配
 （3 层须匹配用户确认-3层，见 06 R35 / 09 D37）；分析前提表必须含"细分深度来源"行。
+失效价位表固定列：方案 / 失效价位 / 方向（break-down/break-up，--from-report 零推断依赖）/
+规则依据 / 触发后果；两个模板 {{失效价位表}} 外侧带 INVALIDATION-TABLE 锚点
+（invalidation_check.py --from-report 抽取依赖，check_invalidation_anchor 校验缺失即报错）。
 """
 import json
 import os
@@ -39,8 +42,26 @@ TABLE_FIELDS = {
     "主方案数浪": ["浪", "端点", "结构", "说明"],
     "neely参考": ["脚本", "输出", "意义"],
     "八因子": ["因子", "主方案", "替代方案"],
-    "失效价位": ["方案", "失效价位", "规则依据", "触发后果"],
+    "失效价位": ["方案", "失效价位", "方向", "规则依据", "触发后果"],
 }
+
+# 失效价位表锚点（圈定报告第 5 章失效表；invalidation_check.py --from-report 据以抽取。
+# 模板 {{失效价位表}} 外侧必须保留：gen_report_md / gen_report_web 渲染前校验模板、
+# embed_report_images 交付前校验产出，缺失即报错）
+INVALIDATION_ANCHOR_BEGIN = "<!-- INVALIDATION-TABLE-BEGIN -->"
+INVALIDATION_ANCHOR_END = "<!-- INVALIDATION-TABLE-END -->"
+# 失效价位表"方向"列合法值（--from-report 零推断依赖；观察位行同样须填方向）
+INVALIDATION_DIRECTIONS = ("break-down", "break-up")
+
+
+def check_invalidation_anchor(text, label):
+    """校验文本含失效价位表锚点对且 BEGIN 在 END 之前；缺失/乱序即 fail()。"""
+    b = text.find(INVALIDATION_ANCHOR_BEGIN)
+    e = text.find(INVALIDATION_ANCHOR_END)
+    if b < 0 or e < 0 or b > e:
+        fail("%s 缺少失效价位表锚点（%s / %s）或顺序错误——模板须在 {{失效价位表}} 外侧保留锚点"
+             "（invalidation_check.py --from-report 依赖）"
+             % (label, INVALIDATION_ANCHOR_BEGIN, INVALIDATION_ANCHOR_END))
 
 # 细分深度（09 默认口径表 D37 / 06 R35）：默认 2 层，3 层须用户明确要求。data.json 顶层
 # "细分深度" 必填（2/3）+ "细分深度来源" 必填且必须匹配（3 层仅用户确认），校验失败即 fail。
@@ -132,6 +153,11 @@ def validate(data):
             bad = [c for c in cols if c not in r]
             if bad:
                 fail("%s 表第 %d 行缺列: %s" % (tname, i + 1, "、".join(bad)))
+        if tname == "失效价位":
+            for i, r in enumerate(rows):
+                if str(r.get("方向", "")).strip() not in INVALIDATION_DIRECTIONS:
+                    fail("失效价位表第 %d 行'方向'列须为 break-down/break-up"
+                         "（--from-report 零推断依赖），收到: %r" % (i + 1, r.get("方向")))
     if empty_tables:
         fail("data.json 表格为空或缺失: %s" % "、".join(empty_tables))
     if not any(str(r.get("项", "")).strip() == "细分深度来源"

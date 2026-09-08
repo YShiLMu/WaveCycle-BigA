@@ -100,6 +100,9 @@ def embed_html(html_path: pathlib.Path, images):
 
 
 def validate(md_text: str, html_text: str, images, keep_absolute: bool):
+    import report_common as rc  # 锚点校验函数单一出处；局部导入避免与命名工具循环依赖
+    rc.check_invalidation_anchor(md_text, "分析报告.md")
+    rc.check_invalidation_anchor(html_text, "网页报告.html")
     expected = len(images)  # 标准模式 2 张；单方案防御模式 1 张（见 naming.IMAGE_KEYS）
     html_imgs = len(re.findall(r'<img class="pano-img"', html_text))
     html_uris = html_text.count("data:image/png;base64,")

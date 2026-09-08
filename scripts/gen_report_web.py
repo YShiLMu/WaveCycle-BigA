@@ -47,6 +47,7 @@ def main():
         fail("网页模板不存在: %s" % tpl_path)
     with open(tpl_path, encoding="utf-8") as f:
         html = f.read()
+    rc.check_invalidation_anchor(html, "网页报告模板 %s" % tpl_path)
 
     # 1) 表格（网页 HTML 表格，先于文本）
     for tname, cols in rc.TABLE_FIELDS.items():

@@ -46,6 +46,7 @@ def main():
         fail("分析报告模板不存在: %s" % tpl_path)
     with open(tpl_path, encoding="utf-8") as f:
         md = f.read()
+    rc.check_invalidation_anchor(md, "分析报告模板 %s" % tpl_path)
 
     # 1) 表格（Markdown 表格，先于文本，避免表格内容被后续替换误伤）
     for tname, cols in rc.TABLE_FIELDS.items():

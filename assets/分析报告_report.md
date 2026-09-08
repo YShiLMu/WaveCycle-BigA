@@ -44,7 +44,11 @@
 
 ## 5. 失效价位清单
 
+<!-- INVALIDATION-TABLE-BEGIN -->
+
 {{失效价位表}}
+
+<!-- INVALIDATION-TABLE-END -->
 
 ## 6. 交易计划建议
 

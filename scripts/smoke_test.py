@@ -111,6 +111,11 @@ def gen_md(path, n_img=2):
         f.write("# 分析报告（冒烟测试）\n\n## 2 主方案\n\n")
         for name, fn in keys[:n_img]:
             f.write("![%s](图表/%s)\n\n" % (name, fn))
+        f.write("## 5. 失效价位清单\n\n<!-- INVALIDATION-TABLE-BEGIN -->\n\n"
+                "| 方案 | 失效价位 | 方向 | 规则依据 | 触发后果 |\n"
+                "| --- | --- | --- | --- | --- |\n"
+                "| 主方案 | 130 | break-down | R7 | 测试 |\n\n"
+                "<!-- INVALIDATION-TABLE-END -->\n")
 
 
 def gen_html(path):
@@ -300,7 +305,8 @@ def main(argv=None):
             "主方案数浪": [{"浪": "1", "端点": "100/2024-01-01 → 160/2024-02-01", "结构": "Impulse", "说明": "测试"}],
             "neely参考": [{"脚本": "结构阶梯", "输出": "通过", "意义": "测试"}],
             "八因子": [{"因子": "波浪 Rule", "主方案": "通过", "替代方案": "通过"}],
-            "失效价位": [{"方案": "主方案", "失效价位": "130", "规则依据": "R7", "触发后果": "测试"}],
+            "失效价位": [{"方案": "主方案", "失效价位": "130", "方向": "break-down",
+                          "规则依据": "R7", "触发后果": "测试"}],
         },
         "简明分析说明": {
             "大级别浪": "第4浪", "小级别浪": "第4浪的b浪",
@@ -316,6 +322,12 @@ def main(argv=None):
                           "--data", "-"], stdin_text=bad_payload)
     check("缺细分深度来源被拦截（R35/D37）", code != 0 and "细分深度来源" in err,
           (out + err).strip()[:150])
+    # 负例：失效价位表缺"方向"列应被校验拦截（--from-report 零推断依赖）
+    bad_dir = json.loads(payload)
+    del bad_dir["tables"]["失效价位"][0]["方向"]
+    code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_md.py"),
+                          "--data", "-"], stdin_text=json.dumps(bad_dir, ensure_ascii=False))
+    check("失效价位表缺方向列被拦截", code != 0 and "方向" in err, (out + err).strip()[:150])
     # 网页
     code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_web.py"),
                           "--data", "-"], stdin_text=payload)
@@ -396,6 +408,48 @@ def main(argv=None):
     code, out, err = run([sys.executable, os.path.join(HERE, "invalidation_check.py"),
                           "--csv", inv_csv, "--level", "99|向下|主方案|R7"])
     check("非法 --level 报错退出", code != 0 and "5 段" in (out + err), (out + err).strip()[:150])
+
+    # ---- 9b. invalidation_check.py --from-report（锚点/降级/方向三层降级/观察位分离）----
+    print("== 9b. invalidation_check.py --from-report（锚点抽取 + 无锚点降级 + 方向待确认）==")
+    rep_new = os.path.join(tmp, "报告_新格式.md")
+    with open(rep_new, "w", encoding="utf-8", newline="\n") as f:
+        f.write("# 报告\n\n## 5. 失效价位清单\n\n<!-- INVALIDATION-TABLE-BEGIN -->\n\n"
+                "| 方案 | 失效价位 | 方向 | 规则依据 | 触发后果 |\n"
+                "| --- | --- | --- | --- | --- |\n"
+                "| 主方案 | 99 | break-down | R7 | 测试 |\n"
+                "| 替代方案（观察位） | 108 | break-up | 非规则失效价位，实务观察 | 测试 |\n\n"
+                "<!-- INVALIDATION-TABLE-END -->\n")
+    code, out, err = run([sys.executable, os.path.join(HERE, "invalidation_check.py"),
+                          "--csv", inv_csv, "--from-report", rep_new])
+    check("--from-report 锚点抽取正常退出", code == 0, (out + err).strip()[:200])
+    check("锚点抽取标注来源", "锚点抽取" in out)
+    check("新报告方向列零推断（无方向待确认）", "方向待确认" not in out)
+    check("观察位单列且不参与判定", "观察位" in out and "不参与触发判定" in out
+          and "| 升破 |" not in out, out.strip()[-300:])
+
+    rep_old = os.path.join(tmp, "报告_旧格式.md")
+    with open(rep_old, "w", encoding="utf-8", newline="\n") as f:
+        f.write("# 报告\n\n## 【5. 失效价位清单】\n\n"
+                "| 方案 | 类型 | 失效价位 | 判定标准 | 触发后动作 |\n"
+                "| --- | --- | --- | --- | --- |\n"
+                "| 主方案 | 规则失效（下） | 99 | 跌破第 [1] 浪顶，违反 R7 | 失效 |\n"
+                "| 主方案 | 结构预警 | 96 | 跌破后连续 2 根收盘未收回 | 阶段切换 |\n"
+                "| 替代方案 | 规则失效 | 105 | 价格触及该位后结构重估 | 重估 |\n\n"
+                "## 【6. 交易计划建议】\n")
+    code, out, err = run([sys.executable, os.path.join(HERE, "invalidation_check.py"),
+                          "--csv", inv_csv, "--from-report", rep_old])
+    check("旧报告降级解析并披露", code == 0 and "已降级解析" in out, (out + err).strip()[:200])
+    check("类型括号定方向（下→跌破）", "| 跌破 | 规则失效 |" in out)
+    check("结构预警默认不判定且单列", "结构失效价位（不参与本次触发判定" in out)
+    check("方向不定行双向各查并标注待确认", "方向待确认" in out and "跌破?" in out and "升破?" in out)
+    code, out, err = run([sys.executable, os.path.join(HERE, "invalidation_check.py"),
+                          "--csv", inv_csv, "--from-report", rep_old, "--include-structural"])
+    check("--include-structural 纳入结构失效", code == 0 and "已纳入判定" in out
+          and "| 结构失效 |" in out, (out + err).strip()[:200])
+    code, out, err = run([sys.executable, os.path.join(HERE, "invalidation_check.py"),
+                          "--csv", inv_csv])
+    check("无 --from-report 且无 --level 报错退出", code != 0 and "未提供失效价位" in (out + err),
+          (out + err).strip()[:150])
 
     # ---- 10. swings.py --dow ----
     print("== 10. swings.py --dow（道氏状态读数 + DO4 + 无 volume 降级）==")
