@@ -227,6 +227,21 @@ def main(argv=None):
     check("混层级 --path 被拒绝(exit!=0 且提示层级)", code != 0 and "层级" in (out + err),
           (out + err).strip()[:200])
 
+    # ---- 2c. ew_chart --path 显式峰谷（外包线端点强制取 high/low）----
+    print("== 2c. ew_chart --path 显式峰谷（:peak/:trough 覆盖自动判向）==")
+    explicit_png = os.path.join(chart_dir, "显式峰谷_全景.png")
+    code, out, err = run([sys.executable, os.path.join(HERE, "ew_chart.py"),
+                          "--csv", csv_path, "--out", explicit_png, "--title", "显式峰谷",
+                          "--start", "0",
+                          "--path", "[I]@0,[II]@60",
+                          "--path", "1-1@0,1-2@60:trough,1-3@110"])
+    check("显式 :trough 正常出图", code == 0 and os.path.getsize(explicit_png) > 0,
+          err.strip()[:200])
+    code, out, err = run([sys.executable, os.path.join(HERE, "ew_chart.py"),
+                          "--csv", csv_path, "--out", os.path.join(chart_dir, "非法后缀.png"),
+                          "--title", "非法峰谷后缀", "--path", "1@0:foo,2@60"])
+    check("非法峰谷后缀被拒绝(exit!=0)", code != 0, (out + err).strip()[:200])
+
     # ---- 3. embed_report_images.py：2 图标准模式 + 1 图防御模式 ----
     print("== 3. embed_report_images.py（2 图标准模式 + 1 图防御模式）==")
     for case, n_img in (("标准2图", 2), ("防御1图", 1)):
@@ -537,6 +552,16 @@ def main(argv=None):
           _ew._seg_direction(mini, 1, 2) is True)
     check("区间重叠回退收盘比较（close 升 → 上行）", _ew._seg_direction(mini, 2, 4) is True)
     check("区间重叠回退收盘比较（close 降 → 下行）", _ew._seg_direction(mini, 1, 5) is False)
+    check("parse_path_arg 显式 :trough 后缀", _ew.parse_path_arg("3-1-2@1642:trough") == ([1642], ["3-1-2"], ["trough"]))
+    check("parse_path_arg 显式 :p 缩写", _ew.parse_path_arg("3@100:p") == ([100], ["3"], ["peak"]))
+    check("parse_path_arg 无后缀 overrides 全 None", _ew.parse_path_arg("1@10,2@20") == ([10, 20], ["1", "2"], [None, None]))
+    check("parse_path_arg 旧式 overrides 全 None", _ew.parse_path_arg("[1]:10:20") == ([10, 20], ["[1]"], [None, None]))
+    try:
+        _ew.parse_path_arg("1@10:foo")
+        _bad_flag = False
+    except Exception:
+        _bad_flag = True
+    check("parse_path_arg 非法峰谷后缀报错", _bad_flag)
 
     # ---- 14. 核心纯函数直测（swings/key_levels/invalidation_check/ew_chart）----
     print("== 14. 核心纯函数直测（分形交替/聚类容差/失效判定边界/江恩分档）==")

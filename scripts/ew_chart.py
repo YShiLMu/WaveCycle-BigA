@@ -16,8 +16,9 @@ OHLC 合理性：high ≥ low ≥ 0、open/close 落在 [low, high]、日期升�
 浪段参数格式：<标注>:<起始索引>:<结束索引>:<形态备注>[:方向up/down/auto]，索引为 CSV 行号（0 起）；
 方向默认 auto = 按端点极端价位判定（终点高/低均高于起点 → 上行，均低 → 下行，
 区间重叠时回退收盘价比较，与 R20 极端价位口径一致），显式 up/down 可覆盖。
---path 连续浪路径：<标注>:<索引>:<索引>... —— 把一组端点按序连成一条带箭头的连续折线
-（亮色细线，未走完段灰虚线），浪型文字由底部注释区呈现，用于呈现 1-2-3-4-5-A-B-C 完整路径。
+--path 连续浪路径：<框标>@<索引>[:peak|:trough],... 或 <标注>:<索引>:<索引>... —— 把一组端点按序
+连成一条带箭头的连续折线（亮色细线，未走完段灰虚线），浪型文字由底部注释区呈现；端点默认按
+相邻段方向自动取 high/low，索引后加 :peak/:trough（缩写 :p/:t）强制取极值（外包线端点用）。
 --channel 推动浪平行通道：<1浪高点索引>:<3浪高点索引>:<2浪低点索引> —— 连接 1、3 浪高点
 为上轨，过 2 浪低点画平行线为下轨。
 --theme dark（默认）/ light：深色画布亮色连线，或旧浅色。
@@ -124,7 +125,7 @@ def _bottom_layout(paths, waves, pivots, levels, invalids, current_price, channe
     fig_h 画布总高(英寸)，row_h_frac 为底部坐标轴内每行的分数行距。
     """
     n_lvl = {1: 0, 2: 0}
-    for idxs, labels in paths or []:
+    for idxs, labels, *_ in paths or []:
         seq = labels if len(labels) == len(idxs) else list(labels) * len(idxs)
         for lb in seq:
             if lb:
@@ -214,9 +215,10 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
         # direction: "up"（低点出发向上，默认）/ "down"（高点出发向下）
     font_scale: 字号缩放（全景图子浪标注建议 1.2–1.4，保证缩放后子浪清晰）
     theme: "dark"（默认）/ "light"。深色画布下蜡烛与连线改用亮色系。
-    paths: [([idx_a, idx_b, ...], labels), ...]  # 连续浪路径：按索引顺序把端点
+    paths: [([idx_a, idx_b, ...], labels, overrides), ...]  # 连续浪路径：按索引顺序把端点
         # 连成一条带箭头折线（亮色，线宽 0.9px 半透明；最后一段未走完为灰虚线），
-        # 浪型文字由底部注释区呈现。labels 长度=n 为逐点标签，长度=1 自动序号。
+        # 浪型文字由底部注释区呈现。labels 长度=n 为逐点标签，长度=1 自动序号；
+        # overrides[i]∈{None,'peak','trough'} 显式覆盖自动峰谷判定。
     pivots: [(idx, big_label[, peak/trough]), ...]  # 大级别浪标注（[I][II][III]…），
         # 价格/日期实时取端点极值，呈现在底部浪型区左列，与子浪编号区分级别。
     channels: [(idx1_hi, idx3_hi, idx2_low), ...]  # 推动浪平行通道（常规通道）：
@@ -270,8 +272,8 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
         # 起画点校验（硬性）：至少一条路径的起点即起画点(start，原始 CSV 行号)；叠加子浪路径允许起点偏右
         # 但不越出窗口左界。防止"从数据起点/中途起画"，同时不误伤多级叠加（子浪起点晚于主路径起点）。
         if start is not None:
-            touched = any(idxs and idxs[0] == start for idxs, _l in paths)
-            for idxs, labels in paths:
+            touched = any(idxs and idxs[0] == start for idxs, *_ in paths)
+            for idxs, labels, *_ in paths:
                 if idxs and (idxs[0] - base) < 0:
                     print(f"[警告] 起画点校验：{labels[0]} 存在早于窗口左界的端点，已跳过", file=sys.stderr)
             if not touched:
@@ -426,7 +428,8 @@ def _draw_paths(ax, plot_df, base, paths, t, fs):
     返回子浪端点序列 sub_rows=[(label, price, date, x)] 供 draw_chart 生成浪型列表。
     """
     sub_rows = []  # [(label, price, date, x)] 有序子浪端点序列
-    for idxs, labels in paths:
+    for idxs, labels, *rest in paths:
+        overrides = rest[0] if rest else None
         auto_seq = len(labels) == 1
         # 层级色按首个非空标签取：首点可为空标签（表示起点/更大级别，不显示框标），
         # 若用 labels[0] 会把空标签误判成第 1 层白，导致整条子浪链丢失层级配色。
@@ -435,8 +438,9 @@ def _draw_paths(ax, plot_df, base, paths, t, fs):
         valid = []
         for i, idx in enumerate(idxs):
             gi = idx - base
+            ov = overrides[i] if overrides and i < len(overrides) else None
             if 0 <= gi < len(plot_df):
-                valid.append((gi, labels[0] if auto_seq else labels[i]))
+                valid.append((gi, labels[0] if auto_seq else labels[i], ov))
             else:
                 print(f"[警告] 路径点 {labels[0] if auto_seq else labels[i]}[{i}] 索引越界，跳过",
                       file=sys.stderr)
@@ -446,8 +450,12 @@ def _draw_paths(ax, plot_df, base, paths, t, fs):
         # 上行段到达点为峰（取 high）、起点为谷（取 low）；下行段对称
         pts = []
         label_seq = []
-        for j, (gi, lbl) in enumerate(valid):
-            if j == 0:
+        for j, (gi, lbl, ov) in enumerate(valid):
+            if ov == "peak":
+                is_peak = True
+            elif ov == "trough":
+                is_peak = False
+            elif j == 0:
                 is_peak = not _seg_direction(plot_df, valid[0][0], valid[1][0])
             else:
                 is_peak = _seg_direction(plot_df, valid[j - 1][0], gi)
@@ -705,26 +713,50 @@ def parse_gann_arg(s, auto=False):
     return (int(parts[0]), float(parts[1]), float(parts[2]), direction)
 
 
+def _parse_peak_flag(tok):
+    """解析索引后的显式峰谷后缀（:peak/:trough 或缩写 :p/:t），无后缀返回 (tok, None)。
+
+    用途：--path 端点默认按相邻段方向自动判峰谷取 high/low，遇到"外包线"（当日
+    high 高于前日且 low 低于前日）会自动回退收盘比较、可能取错；显式后缀可强制。
+    """
+    if ":" not in tok:
+        return tok, None
+    ix, flag = tok.split(":", 1)
+    flag = flag.strip().lower()
+    if flag in ("p", "peak"):
+        return ix, "peak"
+    if flag in ("t", "trough"):
+        return ix, "trough"
+    raise argparse.ArgumentTypeError(
+        f"--path 峰谷后缀只支持 peak/trough（可缩写 p/t），收到: {flag!r}")
+
+
 def parse_path_arg(s):
-    """解析连续浪路径，两种形式：
+    """解析连续浪路径：
 
     1) 每点带框标（推荐）：'框标@索引,框标@索引,...'，框标即浪编号（如 1/2/3/4/5/A/B/C）。
-       例：--path "1@4165,2@4174,3@4178,4@4223,5@4295,A@4484,B@4612,C@4624"，
-       把每个点依序连成带箭头折线，编号框显示 [1][2][3][4][5][A][B][C]。
+       索引后可加 ':peak'/':trough'（缩写 :p/:t）强制该点取 high/low，覆盖自动判向
+       （用于"外包线"端点：如 --path "3-1-2@1642:trough"）。
+       例：--path "1@4165,2@4174,3@4178,4@4223,5@4295,A@4484,B@4612,C@4624"。
     2) 兼容旧式：'标签:索引:索引:...'，框标自动取序号 1..n。
        例：--path "[1]:4165:4174:4178:4223:4295:4484"。
+
+    返回 (idxs, labels, overrides)：overrides[i] ∈ {None, 'peak', 'trough'}。
     """
     if "@" in s and "," in s:
         points = s.split(",")
-        idxs, labels = [], []
+        idxs, labels, overrides = [], [], []
         for pp in points:
             lb, ix = pp.split("@", 1)
+            ix, ov = _parse_peak_flag(ix)
             idxs.append(int(ix))
             labels.append(lb)
-        return (idxs, labels)
+            overrides.append(ov)
+        return (idxs, labels, overrides)
     if "@" in s:  # 单点带框标（无逗号），视为一个转折点
         lb, ix = s.split("@", 1)
-        return ([int(ix)], [lb])
+        ix, ov = _parse_peak_flag(ix)
+        return ([int(ix)], [lb], [ov])
     # 旧式：标签:索引:索引:...
     parts = s.split(":")
     if len(parts) < 3:
@@ -735,7 +767,7 @@ def parse_path_arg(s):
         idxs = [int(x) for x in parts[1:]]
     except ValueError:
         raise argparse.ArgumentTypeError(f"路径索引须为整数，收到: {s}")
-    return (idxs, [label])
+    return (idxs, [label], [None] * len(idxs))
 
 
 def parse_channel_arg(s):
@@ -814,8 +846,9 @@ def main():
     p.add_argument("--theme", default="dark", choices=("dark", "light"),
                    help="主题：dark（默认，深色画布亮色连线）/ light（旧浅色）")
     p.add_argument("--path", action="append", type=parse_path_arg, default=[],
-                   help="连续浪路径：框标@索引,... 或 标签:索引:索引:...（按序连成一条带箭头折线，"
-                        "端点加编号框）。可多次传入叠加不同层级子浪（如 1-1、1-1-1），"
+                   help="连续浪路径：框标@索引[:peak|:trough],... 或 标签:索引:索引:...（按序连成一条带箭头折线，"
+                        "端点加编号框；索引后 :peak/:trough 强制取 high/low，用于外包线端点）。"
+                        "可多次传入叠加不同层级子浪（如 1-1、1-1-1），"
                         "层级颜色由框标的连字符段数区分（1→白、1-1→青、1-1-1→橙）。"
                         "子浪必用 --path、大级别底图用 --waves；默认 2 层=每个大级别浪都叠第 2 层子浪，"
                         "用户明确要 3 层才叠第 3 层（09 默认口径表 D37）。"
@@ -900,11 +933,11 @@ def main():
         print("[警告] 大级别用 --waves 是 up/down 方向色（青/蓝），不是'首层白'；要首层白色请用 --path 无连字符标签",
               file=sys.stderr)
     has_l1 = any(any(l != "" and _lvl(l) == 1 for l in labels)
-                 for _idxs, labels in args.path)
+                 for _idxs, labels, *_ in args.path)
     if args.path and not has_l1:
         print("[警告] 缺少大级别白色主链：--path 全是带连字符标签（第 2 层+），未用无连字符标签标大级别（应为白色）",
               file=sys.stderr)
-    for _idxs, labels in args.path:
+    for _idxs, labels, *_ in args.path:
         lv = {_lvl(l) for l in labels if l != ""}
         if len(lv) > 1:
             raise SystemExit(
