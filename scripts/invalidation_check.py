@@ -45,6 +45,7 @@ import argparse
 import os
 import re
 import sys
+import math
 
 import pandas as pd
 
@@ -63,6 +64,8 @@ def parse_level(text):
         price = float(price_s)
     except ValueError:
         raise SystemExit("[错误] --level 价位段不是数字：%r" % price_s)
+    if not math.isfinite(price) or price <= 0 or kind not in ("规则失效", "结构失效"):
+        raise SystemExit("[错误] 价位须为正的有限数，类型须为规则失效/结构失效")
     return {"price": price, "direction": direction, "plan": plan, "kind": kind, "rule": rule}
 
 
@@ -212,10 +215,12 @@ def parse_report_levels(path):
         if any(k in blob for k in OBSERVATION_MARKERS):
             observations.append(entry)
             continue
-        if "结构" in kind:
+        if "结构" in kind or (not kind and "结构" in basis):
             entry["kind"] = "结构失效"
             structural.append(entry)
             continue
+        if not kind and not re.search(r"\bR(?:[1-9]|[12][0-9]|3[0-5])\b", basis):
+            raise SystemExit("[错误] 历史失效表缺少类型且依据不能确定，请恢复正文后补齐类型")
         entry["kind"] = "规则失效"
         rules.append(entry)
     return rules, structural, observations, how
@@ -237,11 +242,17 @@ def check_level(df, lv, since=None, confirm_bars=2):
         if len(idx) == 0:
             return {**lv, "status": "数据范围在 --since 之后为空", "first_touch": None,
                     "confirmed": None, "run": 0, "dist": None}
-        start = int(idx[0])
+        start = next(i for i, d in enumerate(df["date"]) if d >= ts)
 
+    rule_kind = "规则失效" in lv.get("kind", "")
+    if rule_kind and not set(re.findall(r"\bR(\d+)\b", lv.get("rule", ""))) & {"5", "6", "7", "17", "29"}:
+        return {**lv, "status": "待确认（未提供可推导价格比较符的规则）", "first_touch": None,
+                "confirmed": None, "run": 0, "dist": float(closes[-1]) - price}
+    strict = rule_kind and not re.search(r"\bR7\b", lv.get("rule", ""))
     touch = None
     for i in range(start, len(df)):
-        if (lows[i] <= price) if down else (highs[i] >= price):
+        hit = (lows[i] < price if strict else lows[i] <= price) if down else (highs[i] > price if strict else highs[i] >= price)
+        if hit:
             touch = i
             break
     last_close = float(closes[-1])
@@ -251,10 +262,14 @@ def check_level(df, lv, since=None, confirm_bars=2):
         return {**lv, "status": "未触发", "first_touch": None,
                 "confirmed": None, "run": 0, "dist": dist}
 
+    if rule_kind:
+        return {**lv, "status": "已触发规则失效（立即生效，无需收盘确认）",
+                "first_touch": dates[touch], "confirmed": dates[touch], "run": 0, "dist": dist}
+
     # 触及后逐根扫描：streak = 当前连续未收回根数；streak 首次达到 confirm_bars
     # 的那根即确认日（确认后 streak 只表示当前尾段，不再影响判定）
     def recovered(c):
-        return c > price if down else c < price
+        return c >= price if down else c <= price
 
     confirm_idx = None
     streak = 0
@@ -267,7 +282,7 @@ def check_level(df, lv, since=None, confirm_bars=2):
             streak = 0
     confirmed = confirm_idx is not None
     status = ("已触发且已确认（连续 %d 根收盘未收回）" % confirm_bars if confirmed
-              else "已触发待确认（触及后连续未收回 %d 根，确认窗口 %d）" % (streak, confirm_bars))
+              else "结构位触及待确认（触及后连续未收回 %d 根，确认窗口 %d）" % (streak, confirm_bars))
     return {**lv, "status": status, "first_touch": dates[touch],
             "confirmed": dates[confirm_idx] if confirmed else None,
             "run": streak, "dist": dist}
@@ -288,6 +303,8 @@ def main(argv=None):
     ap.add_argument("--confirm-bars", type=int, default=2,
                     help="确认窗口：触及后连续 N 根收盘未收回（默认 2，D 口径）")
     args = ap.parse_args(argv)
+    if args.confirm_bars < 1:
+        ap.error("确认根数须为正整数")
 
     levels, structural, observations = [], [], []
     if args.from_report:
@@ -302,7 +319,7 @@ def main(argv=None):
             levels += structural
     if args.level:
         levels += [parse_level(t) for t in args.level]
-    if not levels and not observations:
+    if not levels and not observations and not structural:
         raise SystemExit("[错误] 未提供失效价位：用 --from-report 或 --level")
     df = load_ohlc(args.csv)
 

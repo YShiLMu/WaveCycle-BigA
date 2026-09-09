@@ -147,7 +147,7 @@ def main(argv=None):
     check("输出含前高/前低节", "== 1. 前高/前低" in out)
     check("输出含跳空缺口节", "== 2. 跳空缺口" in out)
     check("输出含多日未破节", "== 3. 多日未破压力/支撑位" in out)
-    check("检出跳空缺口", "上跳" in out)
+    check("已回补的历史缺口不再列出", "上跳" not in out and "== 2. 跳空缺口 ==\n  （无）" in out)
 
     bad_csv = os.path.join(tmp, "bad.csv")
     with open(bad_csv, "w", encoding="utf-8", newline="\n") as f:
@@ -315,7 +315,7 @@ def main(argv=None):
     print("== 7. gen_report_web.py / gen_report_md.py（stdin data.json 渲染网页与 md）==")
     data = {
         "标的名称": "冒烟", "标的代码": "000000", "时间戳": "20260101_1200",
-        "细分深度": 2, "细分深度来源": "用户确认-2层",
+        "报告模式": "标准", "细分深度": 2, "细分深度来源": "用户确认-2层",
         "fields": {
             "分析日期": "2026-01-01", "分析级别": "日线级别", "收盘价": str(last_close),
             "主方案说明": "测试", "主方案失效": "测试", "替代方案": "测试",
@@ -328,9 +328,11 @@ def main(argv=None):
                         {"项": "级别", "内容": "日线级别"}],
             "主方案数浪": [{"浪": "1", "端点": "100/2024-01-01 → 160/2024-02-01", "结构": "Impulse", "说明": "测试"}],
             "neely参考": [{"脚本": "结构阶梯", "输出": "通过", "意义": "测试"}],
-            "八因子": [{"因子": "波浪 Rule", "主方案": "通过", "替代方案": "通过"}],
-            "失效价位": [{"方案": "主方案", "失效价位": "130", "方向": "break-down",
-                          "规则依据": "R7", "触发后果": "测试"}],
+            "八因子": [{"因子": factor, "主方案": 1, "替代方案": 1}
+                       for factor in ("Guideline 得分", "结构完整度", "斐波那契共振", "道氏一致性",
+                                      "江恩价格共振", "江恩时间共振", "蜡烛图信号", "失效距离")],
+            "失效价位": [{"方案": plan, "类型": "规则失效", "失效价位": "130", "方向": "break-down",
+                          "规则依据": "R7", "触发后果": "测试"} for plan in ("主方案", "替代方案")],
         },
         "简明分析说明": {
             "大级别浪": "第4浪", "小级别浪": "第4浪的b浪",
@@ -402,7 +404,7 @@ def main(argv=None):
     code, out, err = run([sys.executable, os.path.join(HERE, "data_check.py"),
                           "--csv", nan_all_csv, "--source", "测试", "--fq", "none"])
     check("OHLC 全 NaN 时极值/收盘缺失分支（exit 1，无 nan 输出）",
-          code == 1 and "无可靠极值" in out and "nan" not in out.lower(), out.strip()[:200])
+          code == 1 and "不通过" in out and "缺失或非有限" in out and "nan" not in out.lower(), out.strip()[:200])
 
     # ---- 9. invalidation_check.py ----
     print("== 9. invalidation_check.py（触发/确认/未触发/--since）==")
@@ -418,12 +420,12 @@ def main(argv=None):
                           "--level", "94|break-down|主方案|结构失效|06 6.6注",
                           "--level", "112|break-up|替代方案|规则失效|R19"])
     check("判定正常退出", code == 0, (out + err).strip()[:200])
-    check("已触发已确认（99，首根已触及，确认于 2024-01-06）",
-          "已触发且已确认" in out and "2024-01-01" in out and "2024-01-06" in out)
+    check("规则失效首根立即生效（99，2024-01-01）",
+          "已触发规则失效（立即生效" in out and "2024-01-01 | 2024-01-01" in out)
     check("未触发（94）", "未触发" in out)
     check("升破方向未触发（112）", "112.000" in out)
-    check("触发摘要计数 1/3（1 个已确认）",
-          "1/3 个失效价位已触发，其中 1 个已过确认窗口" in out)
+    check("触发摘要计数 1/3（规则立即失效，不计结构确认窗口）",
+          "1/3 个失效价位已触发，其中 0 个已过确认窗口" in out)
     code, out, err = run([sys.executable, os.path.join(HERE, "invalidation_check.py"),
                           "--csv", inv_csv, "--since", "2024-01-05",
                           "--level", "99|break-down|主方案|规则失效|R7"])
@@ -592,9 +594,9 @@ def main(argv=None):
         "low": [99.0, 100.0, 90.0], "close": [100.5, 101.5, 102.0]})
     r_last = _iv.check_level(df_last, {"price": 90.0, "direction": "break-down",
                                        "plan": "主", "kind": "规则失效", "rule": "R7"})
-    check("check_level 触及在最后一根 → 待确认 0 根",
-          r_last["status"].startswith("已触发待确认") and "0 根" in r_last["status"]
-          and r_last["confirmed"] is None and r_last["first_touch"] is not None,
+    check("check_level 规则触及在最后一根仍立即失效",
+          "立即生效" in r_last["status"]
+          and r_last["confirmed"] is not None and r_last["first_touch"] is not None,
           str(r_last["status"]))
 
     check("gann_auto_scale 分档边界（9.99→0.05、10→0.5、999.99→5、1000→50、指数固定 50）",

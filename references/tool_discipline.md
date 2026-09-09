@@ -30,7 +30,7 @@
 <!-- CLI-PARAM-TABLE-BEGIN -->
 - **`ew_chart.py`**：`-h` `--csv` `--out` `--out-auto` `--title` `--waves` `--invalid` `--level` `--current` `--fib` `--last` `--start` `--gann` `--gann-auto-scale` `--gann-index` `--font-scale` `--theme` `--path` `--channel` `--pivot`
 - **`swings.py`**：`-h` `--csv` `--k` `--start` `--end` `--weekly` `--chart-args` `--tail` `--path` `--dow` `--fib`
-- **`key_levels.py`**：`-h` `--csv` `--shadow-ratio` `--trend-threshold` `--window` `--swing-k` `--cluster-tolerance` `--recent` `--gap-band` `--max-levels`
+- **`key_levels.py`**：`-h` `--start` `--end` `--csv` `--shadow-ratio` `--trend-threshold` `--window` `--swing-k` `--cluster-tolerance` `--recent` `--gap-band` `--max-levels`
 - **`preflight.py`**：`-h` `--csv` `--source` `--fq` `--k` `--start` `--end` `--weekly` `--tail` `--no-dow` `--no-key-levels` `--key-levels-args` `--compact` `--no-compact`
 - **`rule_check.py`**：`-h` `--wave` `--dir`
 - **`score.py`**：`-h` `--scheme`

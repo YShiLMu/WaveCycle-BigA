@@ -27,12 +27,29 @@ import base64
 import pathlib
 import re
 import sys
+import io
+from PIL import Image
 
 from naming import HTML_TOKENS, IMAGE_KEYS
 
 
+def verify_png(payload):
+    """同时验证 PNG 格式、校验块和像素解码，拒绝伪造前缀。"""
+    try:
+        with Image.open(io.BytesIO(payload)) as img:
+            if img.format != "PNG":
+                raise ValueError("图片不是 PNG")
+            img.verify()
+        with Image.open(io.BytesIO(payload)) as img:
+            img.load()
+    except Exception as exc:
+        raise SystemExit("[校验失败] PNG 无法完整解码：%s" % exc)
+
+
 def data_uri(png_path: pathlib.Path) -> str:
-    return "data:image/png;base64," + base64.b64encode(png_path.read_bytes()).decode("ascii")
+    payload = png_path.read_bytes()
+    verify_png(payload)
+    return "data:image/png;base64," + base64.b64encode(payload).decode("ascii")
 
 
 def locate_assets(folder: pathlib.Path):
@@ -55,29 +72,30 @@ def locate_assets(folder: pathlib.Path):
     return images, mds[0], htmls[0]
 
 
-def embed_md(md_path: pathlib.Path, images, keep_absolute: bool):
+def embed_md(md_path: pathlib.Path, images, keep_absolute: bool, write=True):
     text = md_path.read_text(encoding="utf-8")
     for key, filename in IMAGE_KEYS:
         pat = re.compile(r"(!\[[^\]]*\]\()([^)]*" + re.escape(filename) + r")(\))")
         if key not in images:
             continue  # 单方案防御模式：替代方案图在 md 中无引用，跳过
         if keep_absolute:
-            # 校验原引用为绝对路径；保留原样
-            for m in pat.finditer(text):
-                p = m.group(2)
-                if not (p.startswith("/") or re.match(r"^[A-Za-z]:[/\\]", p)):
-                    raise SystemExit(f"[错误] 回退模式下图片引用必须是绝对路径：{p}")
+            target = images[key].resolve().as_posix()
         else:
-            uri = data_uri(images[key])
-            text = pat.sub(lambda m, u=uri: m.group(1) + u + m.group(3), text)
+            target = data_uri(images[key])
+        text = pat.sub(lambda m: m.group(1) + target + m.group(3), text)
+        # 标准图名也可定位已经内嵌的引用，支持再次内嵌与绝对路径回退。
+        named = re.compile(r"(!\[" + re.escape(key) + r"\]\()([^)]*)(\))")
+        text = named.sub(lambda m: m.group(1) + target + m.group(3), text)
     if keep_absolute:
         note = "\n\n> 注：本报告图片使用绝对路径引用（当前查看器不支持 data URI 图片时的回退模式）；图片目录保留在 `图表/`。\n"
         if "回退模式" not in text:
             text += note
-    md_path.write_text(text, encoding="utf-8", newline="")
+    if write:
+        md_path.write_text(text, encoding="utf-8", newline="")
+    return text
 
 
-def embed_html(html_path: pathlib.Path, images):
+def embed_html(html_path: pathlib.Path, images, write=True):
     text = html_path.read_text(encoding="utf-8")
     for key, token in HTML_TOKENS.items():
         if key in images:
@@ -96,13 +114,37 @@ def embed_html(html_path: pathlib.Path, images):
             text = miss_pat.sub(
                 '<div class="img-missing">（单方案防御模式：替代方案未出图，不适用）</div>', text)
             text = text.replace(token, "（无图）")
-    html_path.write_text(text, encoding="utf-8", newline="")
+    if write:
+        html_path.write_text(text, encoding="utf-8", newline="")
+    return text
 
 
 def validate(md_text: str, html_text: str, images, keep_absolute: bool):
     import report_common as rc  # 锚点校验函数单一出处；局部导入避免与命名工具循环依赖
     rc.check_invalidation_anchor(md_text, "分析报告.md")
     rc.check_invalidation_anchor(html_text, "网页报告.html")
+    has_state = "REPORT-STATE-" in md_text or "REPORT-STATE-" in html_text
+    if has_state:
+        try:
+            md_state, html_state = rc.extract_state(md_text), rc.extract_state(html_text)
+        except (ValueError, UnicodeError) as exc:
+            raise SystemExit("[校验失败] 报告状态错误：%s" % exc)
+        if md_state != html_state:
+            raise SystemExit("[校验失败] 两份报告结构化状态不一致")
+        rc.validate(md_state)
+        expected_count = 1 if md_state["报告模式"] == "单方案防御" else 2
+        if len(images) != expected_count:
+            raise SystemExit("[校验失败] 实际图片数与声明的报告模式不一致")
+    for label, text in (("md", md_text), ("html", html_text)):
+        for encoded in re.findall(r"data:image/png;base64,([^\"')\s<>]*)", text):
+            try:
+                payload = base64.b64decode(encoded, validate=True)
+            except ValueError as exc:
+                raise SystemExit("[校验失败] %s 图片编码无效：%s" % (label, exc))
+            verify_png(payload)
+    if keep_absolute:
+        for path in images.values():
+            verify_png(path.read_bytes())
     expected = len(images)  # 标准模式 2 张；单方案防御模式 1 张（见 naming.IMAGE_KEYS）
     html_imgs = len(re.findall(r'<img class="pano-img"', html_text))
     html_uris = html_text.count("data:image/png;base64,")
@@ -145,12 +187,11 @@ def main():
         raise SystemExit(f"[错误] 文件夹不存在：{folder}")
     images, md_path, html_path = locate_assets(folder)
 
-    embed_md(md_path, images, args.md_keep_absolute)
-    embed_html(html_path, images)
-
-    md_text = md_path.read_text(encoding="utf-8")
-    html_text = html_path.read_text(encoding="utf-8")
+    md_text = embed_md(md_path, images, args.md_keep_absolute, write=False)
+    html_text = embed_html(html_path, images, write=False)
     validate(md_text, html_text, images, args.md_keep_absolute)
+    md_path.write_text(md_text, encoding="utf-8", newline="")
+    html_path.write_text(html_text, encoding="utf-8", newline="")
 
     mode = "md=绝对路径回退 / html=base64" if args.md_keep_absolute else "md+html 均 base64"
     print(f"[完成] 已内嵌 {len(images)} 张图（{mode}）：")

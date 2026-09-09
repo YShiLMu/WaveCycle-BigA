@@ -33,6 +33,7 @@
 
 import argparse
 import sys
+import math
 
 
 def parse_wave(text):
@@ -42,7 +43,10 @@ def parse_wave(text):
                          "或写成 `--wave \"1:a:b\"`；勿用 @ 或空格分隔），收到：%r" % text)
     label = parts[0].strip()
     try:
-        return label, float(parts[1]), float(parts[2])
+        values = float(parts[1]), float(parts[2])
+        if not label or not all(math.isfinite(v) for v in values):
+            raise ValueError("端点必须为有限数值")
+        return label, *values
     except ValueError:
         raise SystemExit("[错误] --wave 价格段不是数字：%r（格式「标签:起点价:终点价」）" % text)
 
@@ -68,6 +72,8 @@ def main(argv=None):
 
     waves = [parse_wave(t) for t in args.wave]
     labels = [w[0] for w in waves]
+    if len(set(labels)) != len(labels):
+        raise SystemExit("[错误] 浪标签重复")
     for need in ("1", "2", "3"):
         if need not in labels:
             raise SystemExit("[错误] 缺少第 %s 浪（--wave \"1:起点:终点\"）；R5/R6 需 1-2-3" % need)
@@ -91,13 +97,13 @@ def main(argv=None):
 
     # R5：第 2 浪不破第 1 浪起点
     if up:
-        row("R5", w2[2] > w1[1],
-            "第 2 浪终点 %.3f %s 第 1 浪起点 %.3f" % (w2[2], ">" if w2[2] > w1[1] else "≤", w1[1]))
+        row("R5", w2[2] >= w1[1],
+            "第 2 浪终点 %.3f %s 第 1 浪起点 %.3f" % (w2[2], "≥" if w2[2] >= w1[1] else "<", w1[1]))
     else:
-        row("R5", w2[2] < w1[1],
-            "第 2 浪终点 %.3f %s 第 1 浪起点 %.3f" % (w2[2], "<" if w2[2] < w1[1] else "≥", w1[1]))
+        row("R5", w2[2] <= w1[1],
+            "第 2 浪终点 %.3f %s 第 1 浪起点 %.3f" % (w2[2], "≤" if w2[2] <= w1[1] else ">", w1[1]))
 
-    # R6：第 3 浪不是最短（严格短于任一其他推动浪即违反）
+    # R6：第 3 浪不是最短（同时严格短于第 1、5 浪才违反）
     l1 = abs(w1[2] - w1[1])
     l3 = abs(w3[2] - w3[1])
     if w5:
@@ -108,7 +114,7 @@ def main(argv=None):
             "浪长 |1|=%.3f、|3|=%.3f、|5|=%.3f —— 第 3 浪%s最短" %
             (l1, l3, l5, "并非" if ok6 else "是"))
     else:
-        row("R6", l3 >= l1, "浪长 |1|=%.3f、|3|=%.3f（第 5 浪未提供，仅比 1/3）" % (l1, l3))
+        print("| R6 | 待确认 | 第 5 浪未提供；|1|=%.3f、|3|=%.3f；若第 3 浪已完成且短于第 1 浪，第 5 浪长度须 ≤ %.3f |" % (l1, l3, l3))
 
     # R7：第 4 浪不进第 1 浪价格区域
     if w4:

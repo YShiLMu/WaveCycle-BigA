@@ -78,7 +78,7 @@ def _rows(mask, df=None, limit=10):
     行号 = pandas index + 2（表头占 1 + 索引基准 1）；df 非空时附注对应日期，便于定位。"""
     idxs = list(df_index(mask)[:limit])
     if df is not None:
-        return ["%d(%s)" % (int(i) + 2, str(df["date"].iloc[i])[:10]) for i in idxs]
+        return ["%d(%s)" % (int(i) + 2, str(df["date"].loc[i])[:10]) for i in idxs]
     return [int(i) + 2 for i in idxs]
 
 
@@ -190,6 +190,8 @@ def run_checks(df, fq, source):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="数据自检与数据基准输出（workflow 第 1 步 1.4/1.5，D28）")
+    ap.add_argument("--start", default=None, help="分析起始日期")
+    ap.add_argument("--end", default=None, help="分析截止日期")
     ap.add_argument("--csv", required=True, help="行情 CSV 路径")
     ap.add_argument("--source", default="", help="数据源标注（如：腾讯 fqkline / 东财 2.931152），未提供判不通过")
     ap.add_argument("--fq", default="", help="复权口径标注（none/qfq/hfq），未提供判不通过")
@@ -203,7 +205,14 @@ def main(argv=None):
         print("| 表头契约 | 不通过 | %s |" % err)
         print("\n存在不通过项：退回重新取数或按数据获取协议降级，禁止带病数据进入数浪。")
         return 1
-    rows, facts = run_checks(df, args.fq, args.source)
+    try:
+        from ohlc_io import select_range, validate_ohlc
+        df = select_range(df, args.start, args.end)
+        validate_ohlc(df)
+        rows, facts = run_checks(df, args.fq, args.source)
+    except (ValueError, TypeError, KeyError) as exc:
+        print("| 数据有效性 | 不通过 | %s |" % exc)
+        return 1
     for name, verdict, note in rows:
         print("| %s | %s | %s |" % (name, verdict, note))
     # 表头契约本身

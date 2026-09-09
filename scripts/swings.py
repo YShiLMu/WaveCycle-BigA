@@ -271,6 +271,7 @@ def main():
     args = p.parse_args()
 
     rows, has_volume = load_ohlc(args.csv)
+    rows = [(normalize_date(r[0]), *r[1:]) for r in rows]
     lo_i = 0
     if args.start:
         s = normalize_date(args.start)
@@ -334,7 +335,7 @@ def main():
         dropped = len(dow_seq) - len(sig)
         print("\n== 道氏趋势状态读数（D30：D11 显著筛后 %d 个摆动%s，3 点判、2 点定）=="
               % (len(sig), "，已剔除小摆动 %d 个" % dropped if dropped else ""))
-        _state, dow_lines = dow_state(sig, rows, has_volume)
+        _state, dow_lines = dow_state(sig, rows[lo_i:hi_i], has_volume)
         for ln in dow_lines:
             print("  " + ln)
 

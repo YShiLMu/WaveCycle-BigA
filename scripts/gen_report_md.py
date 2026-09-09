@@ -61,6 +61,10 @@ def main():
     md = md.replace("{{表名}}", "表名")
     md = md.replace("{{字段名}}", "字段名")
 
+    if data["报告模式"] == "单方案防御":
+        md = re.sub(r"!\[[^\]]*\]\([^)]*替代方案_全景\.png\)", "（单方案防御：替代方案不适用）", md)
+        md = "报告模式：单方案防御；原因：" + data["单方案原因"] + "\n\n" + md
+
     # 4) 自检：无未替换占位符 + 模板特征
     residual = set(re.findall(r"\{\{([^}]+)\}\}", md))
     if residual:
@@ -73,7 +77,7 @@ def main():
     print("     " + md_name, file=sys.stderr)
     print("[提示] 请仅捕获 stdout：`> 文件名`，不要加 2>&1——本 [OK]/[NEXT] 走 stderr，加 2>&1 会把日志混进交付文档第一行", file=sys.stderr)
     print("[NEXT] python embed_report_images.py <归档文件夹>", file=sys.stderr)
-    sys.stdout.write(md)
+    sys.stdout.write(md + rc.encode_state(data))
     return 0
 
 

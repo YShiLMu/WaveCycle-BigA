@@ -122,9 +122,13 @@ def detect_gaps(df):
     dates = df["date"].values
     for i in range(1, len(df)):
         if lows[i] > highs[i - 1]:
-            gaps.append((dates[i], "上跳", highs[i - 1], lows[i]))
+            upper = min(lows[i:])
+            if upper > highs[i - 1]:
+                gaps.append((dates[i], "上跳", highs[i - 1], upper))
         elif highs[i] < lows[i - 1]:
-            gaps.append((dates[i], "下跳", highs[i], lows[i - 1]))
+            lower = max(highs[i:])
+            if lower < lows[i - 1]:
+                gaps.append((dates[i], "下跳", lower, lows[i - 1]))
     return gaps
 
 
@@ -215,6 +219,8 @@ def detect_horizontal_levels(df, shadow_ratio=2.0, window=250, mode="both", tol=
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="技术分析锚点提取（横向锚点）")
+    ap.add_argument("--start", default=None, help="分析起始日期")
+    ap.add_argument("--end", default=None, help="分析截止日期")
     ap.add_argument("--csv", required=True, help="行情 CSV 路径")
     ap.add_argument("--shadow-ratio", type=float, default=2.0,
                     help="长影线判定倍率：影线 >= 实体 × 该值（默认 2.0，同流星线/锤子线口径）")
@@ -236,7 +242,7 @@ def main(argv=None):
                          "丢掉低价位支撑/压力；截断时打印省略提示")
     args = ap.parse_args(argv)
 
-    df = load_ohlc(args.csv)
+    df = load_ohlc(args.csv, start=args.start, end=args.end)
     last_close = float(df["close"].iloc[-1])
 
     print("== 1. 前高/前低（D27 第 2 类：被 ≥2 次触及的历史极值，相邻触及间隔 ≥3 根，"

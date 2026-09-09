@@ -59,6 +59,9 @@ def main():
                     "简明分析说明": rc.render_jianming(jm).replace("\n", "<br>\n")})
     html = rc.substitute(html, mapping)
 
+    if data["报告模式"] == "单方案防御":
+        html = html.replace("<body>", "<body><p>报告模式：单方案防御；原因：" + data["单方案原因"] + "</p>")
+
     # 3) 模板说明文字里的字面 {{表名}} / {{字段名}} 非数据占位符，中和防残留误判
     html = html.replace("{{表名}}", "表名")
     html = html.replace("{{字段名}}", "字段名")
@@ -79,7 +82,7 @@ def main():
     print("     " + html_name, file=sys.stderr)
     print("[提示] 请仅捕获 stdout：`> 文件名`，不要加 2>&1——本 [OK]/[NEXT] 走 stderr，加 2>&1 会把日志混进交付文档第一行", file=sys.stderr)
     print("[NEXT] python embed_report_images.py <归档文件夹>", file=sys.stderr)
-    sys.stdout.write(html)
+    sys.stdout.write(html + rc.encode_state(data))
     return 0
 
 

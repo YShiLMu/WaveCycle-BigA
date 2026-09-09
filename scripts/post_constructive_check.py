@@ -58,6 +58,8 @@ def main(argv=None):
     ap.add_argument("--scan", type=int, default=60,
                     help="第 5 浪结束后扫描的最大 K 线数（默认 60）")
     args = ap.parse_args(argv)
+    if args.scan < 1 or (args.up and args.down):
+        ap.error("扫描根数须为正整数，方向不能同时指定")
 
     df = load_ohlc(args.csv, set_date_index=True)
     idx = df.index
@@ -114,8 +116,9 @@ def main(argv=None):
                    "符合（在第 5 浪用时以内）" if stage1_ok
                    else "超过第 5 浪用时（提示：可能是 Terminal / 第 4 浪未走完 / 数法需复查）"))
     else:
-        stage1_ok = False
-        note = "扫描 %d 根内未穿越 2-4 趋势线（Stage 1 不符合）" % args.scan
+        observed = scan_end - r5 - 1
+        stage1_ok = False if observed >= w5_bars else None
+        note = "已观察 %d 根，第 5 浪用 %d 根；%s" % (observed, w5_bars, "窗口已满但未穿越" if stage1_ok is False else "观察窗口不足，待确认")
 
     # Stage 2：回撤极限 + 相对第 5 浪回撤% + 目标区间提示
     lows = [float(df["low"].iloc[row]) for row in range(r5 + 1, scan_end)]
@@ -124,7 +127,7 @@ def main(argv=None):
 
     if extreme is not None:
         w5_span = abs(p5 - p4)
-        retrace_pct = abs(extreme - p5) / w5_span * 100 if w5_span else 0.0
+        retrace_pct = max(0.0, (p5 - extreme) if up else (extreme - p5)) / w5_span * 100 if w5_span else 0.0
         if args.ext == 1:
             hint = "应回撤到第 2 浪价位区（%.3f 附近）" % p2
         elif args.ext == 3:
@@ -132,7 +135,7 @@ def main(argv=None):
         else:
             hint = "应回撤≥第 5 浪 61.8% 但不完全（否则延长可能终止更大趋势）"
         s2_note = ("回撤极限 %.3f（相对第 5 浪 %.1f%%）；%s" % (extreme, retrace_pct, hint))
-        stage2_ok = (retrace_pct >= 61.8) if args.ext == 5 else None
+        stage2_ok = (61.8 <= retrace_pct < 100) if args.ext == 5 else None
     else:
         s2_note = "扫描内无有效回撤数据"
         stage2_ok = None
@@ -140,7 +143,7 @@ def main(argv=None):
     print("## 2-4 趋势线两阶段确认（post_constructive_check.py，07 G28 / D36 口径）\n")
     print("| Stage | 判定 | 依据 |")
     print("| --- | --- | --- |")
-    print("| Stage 1（时间） | %s | %s |" % ("符合" if stage1_ok else "不完全", note))
+    print("| Stage 1（时间） | %s | %s |" % ("符合" if stage1_ok else ("待确认" if stage1_ok is None else "不完全"), note))
     print("| Stage 2（深度） | %s | %s |" %
           ("符合" if stage2_ok else ("核对" if stage2_ok is None else "不完全"), s2_note))
     print("\n> 定位：可信度加分项——符合→加分、不符→降分，**不判死、不产生失效价位**"

@@ -24,6 +24,8 @@ import json
 import os
 import re
 import sys
+import base64
+import math
 
 from naming import IMAGE_PLACEHOLDERS, validate_component
 
@@ -42,8 +44,34 @@ TABLE_FIELDS = {
     "主方案数浪": ["浪", "端点", "结构", "说明"],
     "neely参考": ["脚本", "输出", "意义"],
     "八因子": ["因子", "主方案", "替代方案"],
-    "失效价位": ["方案", "失效价位", "方向", "规则依据", "触发后果"],
+    "失效价位": ["方案", "类型", "失效价位", "方向", "规则依据", "触发后果"],
 }
+
+FACTOR_NAMES = ["Guideline 得分", "结构完整度", "斐波那契共振", "道氏一致性",
+                "江恩价格共振", "江恩时间共振", "蜡烛图信号", "失效距离"]
+STATE_PATTERN = r"<!-- REPORT-STATE-v1:([A-Za-z0-9+/=]+) -->"
+
+
+def encode_state(data):
+    """状态保留在两个交付文档内，跨会话恢复不依赖临时文件。"""
+    payload = json.dumps(data, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    return "\n<!-- REPORT-STATE-v1:%s -->\n" % base64.b64encode(payload).decode("ascii")
+
+
+def extract_state(text):
+    matches = re.findall(STATE_PATTERN, text)
+    if len(matches) != 1:
+        raise ValueError("报告须含唯一 v1 状态；历史报告请用 --text 恢复正文后补齐输入")
+    return json.loads(base64.b64decode(matches[0], validate=True).decode("utf-8"))
+
+
+def finite_number(value, label):
+    try:
+        if isinstance(value, bool) or not math.isfinite(float(value)):
+            raise ValueError()
+        return float(value)
+    except (ValueError, TypeError):
+        fail("%s 必须为有限数值" % label)
 
 # 失效价位表锚点（圈定报告第 5 章失效表；invalidation_check.py --from-report 据以抽取。
 # 模板 {{失效价位表}} 外侧必须保留：gen_report_md / gen_report_web 渲染前校验模板、
@@ -127,7 +155,7 @@ def validate(data):
     if not isinstance(jm, dict):
         fail("data.json 顶层应含 '简明分析说明' 对象")
 
-    missing = [k for k in PAGE_FIELDS if not str(fields.get(k, "")).strip()]
+    missing = [k for k in PAGE_FIELDS if not isinstance(fields.get(k), str) or not fields[k].strip()]
     if missing:
         fail("data.json 缺少非空文本字段: %s" % "、".join(missing))
 
@@ -163,6 +191,55 @@ def validate(data):
     if not any(str(r.get("项", "")).strip() == "细分深度来源"
                for r in tables.get("分析前提", [])):
         fail("分析前提表缺少'细分深度来源'行（06 R35 / 09 D37 强制披露）")
+
+    mode = data.get("报告模式")
+    if mode not in ("标准", "单方案防御"):
+        fail("报告模式须为 标准/单方案防御")
+    defensive = mode == "单方案防御"
+    if defensive and (not isinstance(data.get("单方案原因"), str) or not data["单方案原因"].strip()):
+        fail("单方案防御须披露单方案原因")
+    if defensive and fields["交易计划"].strip() != "观望，不执行交易。":
+        fail("单方案防御交易计划须为：观望，不执行交易。")
+    factor_rows = tables["八因子"]
+    if len(factor_rows) != 8 or {r["因子"] for r in factor_rows} != set(FACTOR_NAMES):
+        fail("八因子表须恰含八项且不重复：%s" % "、".join(FACTOR_NAMES))
+    for row in factor_rows:
+        for plan in ("主方案", "替代方案"):
+            value = row[plan]
+            if defensive and plan == "替代方案":
+                if value != "不适用":
+                    fail("单方案防御的替代方案评分须为 不适用")
+                continue
+            if row["因子"] == "道氏一致性" and value == "不适用":
+                continue
+            score = finite_number(value, "八因子评分")
+            if row["因子"] != "Guideline 得分" and score not in (0, 1, 2):
+                fail("除 Guideline 得分外，因子分值须为 0/1/2")
+    active_plans = {"主方案"} if defensive else {"主方案", "替代方案"}
+    covered = set()
+    for row in tables["失效价位"]:
+        kind = row["类型"]
+        if kind not in ("规则失效", "结构失效", "观察位"):
+            fail("失效价位类型须为 规则失效/结构失效/观察位")
+        if finite_number(row["失效价位"], "失效价位") <= 0:
+            fail("失效价位须大于零")
+        basis = str(row["规则依据"])
+        ids = re.findall(r"\bR(\d+)\b", basis)
+        if any(not 1 <= int(n) <= 35 for n in ids):
+            fail("失效价位引用未知规则编号")
+        if kind == "规则失效" and not set(ids) & {"5", "6", "7", "17", "29"}:
+            fail("规则失效须引用可推导数值边界的 R5/R6/R7/R17/R29，结构身份与流程规则不能单独生成价位")
+        if not basis.strip() or not str(row["触发后果"]).strip():
+            fail("失效价位须有依据与触发后果")
+        if kind != "观察位":
+            covered.add(row["方案"])
+    if not active_plans <= covered:
+        fail("各有效方案须至少有一个真实失效条件，观察位不能代替")
+    source_rows = [r for r in tables["分析前提"] if r["项"] == "细分深度来源"]
+    if len(source_rows) != 1 or source_rows[0]["内容"] != depth_source:
+        fail("分析前提中的细分深度来源与顶层字段不一致")
+    for ep in endpoints:
+        finite_number(ep["价"], "端点价")
 
     return name, code, stamp
 

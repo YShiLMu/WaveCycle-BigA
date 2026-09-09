@@ -10,11 +10,18 @@
     项与本模块同口径但输出路径不同，不共用实现。
 """
 import pandas as pd
+import numpy as np
 
 
 def validate_ohlc(df):
     """数据自检（workflow 第 1 步 1.5 口径）：high ≥ low ≥ 0、open/close 落在
     [low, high]、volume ≥ 0（如有）、日期升序无重复。坏数据直接报错（行号按 CSV）。"""
+
+    if df.empty:
+        raise ValueError("数据自检失败：分析窗口为空")
+    cols = [c for c in ("open", "high", "low", "close", "volume") if c in df]
+    if not np.isfinite(df[cols].astype(float).to_numpy()).all() or df["date"].isna().any():
+        raise ValueError("数据自检失败：含缺失或非有限数值/日期")
 
     def rows(mask):
         return [int(i) + 2 for i in df.index[mask][:10]]
@@ -44,7 +51,22 @@ def validate_ohlc(df):
         raise ValueError("数据自检失败：日期未按升序排列")
 
 
-def load_ohlc(csv_path, set_date_index=False):
+def select_range(df, start=None, end=None):
+    """统一窗口，保留原始数据行索引；非法日期不静默过滤。"""
+    dates = pd.to_datetime(df["date"].astype(str), errors="raise")
+    if dates.isna().any():
+        raise ValueError("数据包含缺失日期")
+    mask = dates.notna()
+    if start:
+        mask &= dates >= pd.Timestamp(start)
+    if end:
+        mask &= dates <= pd.Timestamp(end)
+    if not mask.any():
+        raise ValueError("分析日期窗口为空")
+    return df.loc[mask].copy()
+
+
+def load_ohlc(csv_path, set_date_index=False, start=None, end=None):
     """读 OHLC CSV（date,open,high,low,close[,volume]），兼容 YYYY-MM-DD 与
     YYYYMMDD 两种日期写法；读取后执行 validate_ohlc 硬拦截。
 
@@ -62,6 +84,7 @@ def load_ohlc(csv_path, set_date_index=False):
     if missing:
         raise ValueError("CSV 缺少列: %s" % sorted(missing))
     df["date"] = pd.to_datetime(df["date"].astype(str))
+    df = select_range(df, start, end)
     validate_ohlc(df)
     if set_date_index:
         df = df.set_index("date").sort_index()

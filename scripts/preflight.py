@@ -35,7 +35,11 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def run_script(name, cmd_args):
+def run_script(name, cmd_args, window=None):
+    cmd_args = list(cmd_args)
+    for flag, value in (window or {}).items():
+        if value and flag not in cmd_args:
+            cmd_args += [flag, value]
     env = dict(os.environ)
     env.setdefault("PYTHONUTF8", "1")
     proc = subprocess.run([sys.executable, os.path.join(HERE, name)] + cmd_args,
@@ -54,8 +58,8 @@ def main(argv=None):
     ap.add_argument("--source", default="", help="数据源标注（透传 data_check，缺判不通过）")
     ap.add_argument("--fq", default="", help="复权口径标注 none/qfq/hfq（透传 data_check，缺判不通过）")
     ap.add_argument("--k", type=int, default=5, help="swings 分形窗口（默认 5）")
-    ap.add_argument("--start", default=None, help="swings 分析起始日期（索引基准不变）")
-    ap.add_argument("--end", default=None, help="swings 分析结束日期")
+    ap.add_argument("--start", default=None, help="全部检查的分析起始日期（索引基准不变）")
+    ap.add_argument("--end", default=None, help="全部检查的分析截止日期")
     ap.add_argument("--weekly", action="store_true", help="swings 周线聚合（道氏主要趋势口径）")
     ap.add_argument("--tail", type=int, default=None, help="swings 只打印最近 N 个摆动点")
     ap.add_argument("--no-dow", action="store_true", help="跳过道氏状态读数")
@@ -69,6 +73,9 @@ def main(argv=None):
     ap.add_argument("--no-compact", dest="compact", action="store_false",
                     help="关闭紧凑模式：swings 全量摆动点 + key_levels 簇全量（考古/复核用）")
     args = ap.parse_args(argv)
+    window = {"--start": args.start, "--end": args.end}
+    if any(flag in [arg.split("=", 1)[0] for arg in args.key_levels_args.split()] for flag in ("--start", "--end", "--csv")):
+        ap.error("key-levels-args 不得覆盖公共数据或日期窗口")
 
     print("== preflight 1/3：data_check（数据自检 + 四要素，D28）==")
     dc_args = ["--csv", args.csv]
@@ -76,7 +83,7 @@ def main(argv=None):
         dc_args += ["--source", args.source]
     if args.fq:
         dc_args += ["--fq", args.fq]
-    code = run_script("data_check.py", dc_args)
+    code = run_script("data_check.py", dc_args, window)
     if code != 0:
         print("\n[preflight 终止] data_check 存在不通过项——禁止带病数据进入数浪（01 分析市场 1.5）。"
               "退回取数或降级标注后重跑。")
@@ -97,7 +104,7 @@ def main(argv=None):
         sw_args += ["--tail", "40"]  # compact 默认：只打印最近 40 个摆动点
     if not args.no_dow:
         sw_args.append("--dow")
-    code = run_script("swings.py", sw_args)
+    code = run_script("swings.py", sw_args, window)
     if code != 0:
         print("\n[preflight 终止] swings 失败。")
         return code
@@ -109,7 +116,7 @@ def main(argv=None):
             kl_args += args.key_levels_args.split()
         if not args.compact and "--max-levels" not in args.key_levels_args:
             kl_args += ["--max-levels", "0"]  # --no-compact：簇全量（考古/复核）
-        code = run_script("key_levels.py", kl_args)
+        code = run_script("key_levels.py", kl_args, window)
         if code != 0:
             print("\n[preflight 终止] key_levels 失败。")
             return code
