@@ -1,36 +1,43 @@
 > **打包说明**：本文件由 `01_知识库_knowledge/18_形态精细分类_pattern_specifications.md` 转换生成（仅编号与路径口径不同），**禁止直接修改，修改请改源**；维护性章节不打包，完整版见源文件。
 >
 
-# 形态精细分类（Pattern Specifications）—— Neely 逐变体结构规则
+# 形态精细分类（Pattern Specifications）—— Neely 条件字典
 
-> 来源：《Mastering Elliott Wave: Presenting the Neely Method》ch11「Impulse Patterns」精确分类。
-> 定位：按"哪一浪延长 / 何种变体"把推动与修正拆成**逐变体结构规则**，作为现有 `02_推动浪_impulse`、`04_调整浪_corrective`、`05_三角形_triangle` 的**更细补充（新增，不覆盖）**。术语映射见 `references/terminology.md` 1.9.8。
+> 依据本地《Mastering Elliott Wave》ch11《Advanced Progress Label Application》，辅以 ch10、ch12。按结构已经确定的候选查条件；不靠变体名称填补证据，不新增形态家族或项目 Rule。
 
-## 1. 推动浪精确分类（ch11，Impulse Patterns）
+## 1. 推动浪精细分类
 
-按「哪一浪延长」划分的逐变体结构：
+先区分原书的 Trending 与 Terminal，再查第1／3／5浪延长或非延长、第五浪失败等条目。类型判别须含内部组成、相对幅度、时间、复杂度和父级位置，不能只选最长段。经典推动／楔形仍先按 06 的相应规则复核。
 
-- **Wave-1 Extended / Non-Extended**（第 1 浪延长 / 非延长）
-- **Wave-3 Extended / Non-Extended**（第 3 浪延长 / 非延长）
-- **Wave-5 Extended / Non-Extended**（第 5 浪延长 / 非延长）
-- **5th Wave Failure**（第 5 浪失败）
-- **Double Failure**（双重失败——第 3 浪与第 5 浪相对都变短/弱）
-- **Elongated**（延伸——某一浪明显长于相邻非延长浪）
+**Double Failure 不属于“第三浪与第五浪同时变短”**。原稿将它放入推动类别是错误的；它是下节讨论的调整变体，不能用它为普通推动的 R6 反例开脱。Elongated 的具体意义取决于锯齿／平台上下文，不是任何长浪的通用名称。
 
-> 判定口径：各变体的结构=该浪相对相邻非延长浪的长度关系 + 内部五浪完整性（沿用 references/rules.md R26/R29、references/guidelines.md G12 口径）。Ch11 为逐变体表格化规则，具体端点/比率以原书表为准，本项目仅登记分类框架。
+## 2. 修正浪精细分类
 
-## 2. 修正浪精确分类（ch11）
+### 2.1 锯齿（Zigzag）
 
-### 2.1 Zigzags（锯齿形）
-- Wave-a / Wave-b / Wave-c 各自结构规则（对应 references/terminology.md 1.4.3、references/rules.md R12）。
+先保留项目 R12 的5-3-5与父级证据，再查原书 ch11 页11-18–11-19 和 ch12 页12-26 的 A/B/C 条件。普通与 Elongated 区分不能只靠一个 C/A 值；原文还有位置及后势前提。来源缺失时只列普通锯齿或未定细类，不强选评级表中的高级名称。
 
-### 2.2 平台 / 不规则变体
-- **Irregular**（不规则）、**Elongated**（延伸）、**Irregular Failure**（不规则失败）、**Running**（奔走）；术语映射见 references/terminology.md 1.9.8（Irregular↔1.5.2 不规则、Running↔1.5.1 奔走）。
+### 2.2 平台与失败变体
 
-### 2.3 Triangles（三角形）
-- Contracting 分 **Limiting（限制性）/ Non-Limiting（非限制性）**；含 a/b/c/d/e 每浪结构与通道规则（对应 05 三角形、references/rules.md R15/R27/R28）。
+| 名称／原文位置 | 必须辨清的关系 | 不能替代什么 |
+| --- | --- | --- |
+| Double Failure，ch11页11-12 | B未回撤A的81%以上、C未完全回撤B；原书通常组合为A=Double Combination、B=强Zigzag，或A=Triple Combination、B=Double Zigzag／Combination；另核对形成位置 | 不是推动3/5浪失败，也不是经典第五浪失败 |
+| Elongated，ch11页11-13 | C与B的长度条件，加A/B价格或时间相似及C耗时／幅度扩大 | 不与ch12的C/A关系混分母 |
+| Irregular / Irregular Failure | 原书具体B/C相对位置、完成与后势 | 不只凭名称等同于项目D8的扩张／奔走分类 |
+| Running | 原书强后势预期与完整调整前提 | 不因B越界就认定已完成奔走 |
 
-## 3. 与现有 skill 的关系
+教学边界：给出 A=100→80、B=80→95、C=95→85，B/A=75%、C/B≈66.7%。它只提供Double Failure的两项价格条件；未给上述具体组成、时间与位置时，不能确认该变体。原书用“一般”限定典型组成，不将它改写为“A与B都必须是复杂调整”。正文与图注对81%等号的写法不完全相同，精确边界留待原图核对，本例75%不涉及此歧义。C尚未完成时更不能从暂时停于85得出“失败”。
 
-- 纯新增，编号 18；**不改写** `02_推动浪_impulse`、`04_调整浪_corrective`、`05_三角形_triangle` 现有条文。
-- 细分变体（Double Failure、Irregular Failure 等）作为**变体参考字典**接入 `references/checklists.md（Neely）` 与 `assets/分析报告_report.md` 的形态字段，用于精确判别形态身份与后续概率排序。
+原书图11-12另提示：实际完成点与段内最低点可能不同，图形外观可模拟失败。项目采用R20极值规则时应披露方法差异，不能把原书图示端点未经转换直接当成本项目已验证样本。
+
+### 2.3 三角形（Triangle）
+
+原书的 Limiting／Non-Limiting 不只是收缩／扩张的另一个叫法，涉及父级位置及后续推进的价格／时间限制。经典项目先按 R15/R27 核查五个调整组成与位置；R28 管平台变体，不是三角形分类规则。
+
+尚无完整父级或后势证据时，记录“三角形候选，Neely细类待定”。不得因预期推进较大就倒推出 Non-Limiting，也不得把某类后势不符自动扩展为所有三角形失效。
+
+## 3. 映射、冲突和输出
+
+采用“经典形态 → Neely候选细类 → 原文条件及证据 → 尚缺项 → 本项目结论”五栏。原书专名只有在条件核验后才可查询16的功率评级；Double Combination 与 Double Three 等在原书表中分别列项，不能因为中文都译作联合调整而互换评级。
+
+Neely条件冲突首先影响这项细类声明。若同时出现经典Rule反例，另按对应Rule处理；经典规则未违反、Neely细类缺证时，保留经典候选和未定细类，不将缺证写成通过。记录进入既有报告的Neely参考表，不新增评分权重。

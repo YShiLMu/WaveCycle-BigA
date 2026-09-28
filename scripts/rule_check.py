@@ -58,93 +58,72 @@ def get(waves, label):
     return None
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(
-        description="Rule Check 数值规则判定（R5/R6/R7/R17/R29，D31）",
-        epilog="示例：--wave \"1:3160:4766\" --wave \"2:4766:4028\" --wave \"3:4028:6630\" "
-               "（必须重复 --wave；格式「标签:起点价:终点价」，标签不含冒号）")
-    ap.add_argument("--wave", action="append", required=True,
-                    help="候选推动浪端点「标签:起点价:终点价」，必须重复出现（action=append）；"
-                         "至少 1-2-3，五浪全给判 5 条；格式标签:起点价:终点价，冒号分三段")
-    ap.add_argument("--dir", choices=["up", "down"], default=None,
-                    help="推动方向（缺省按第 1 浪起点→终点自动识别）")
-    args = ap.parse_args(argv)
+def evaluate(waves, direction=None):
+    """共享数值检查：价格不负责确认形态；返回可复用记录，不打印。"""
+    by_label = {w[0]: w for w in waves}
+    if len(by_label) != len(waves):
+        raise ValueError("浪标签重复")
+    if not all(label in by_label for label in ("1", "2", "3")):
+        raise ValueError("缺少第1/2/3浪")
+    if set(by_label) - {"1", "2", "3", "4", "5"}:
+        raise ValueError("普通推动只接受1–5标签")
+    if "5" in by_label and "4" not in by_label:
+        raise ValueError("提供第5浪时不能缺第4浪")
+    ordered = [by_label[str(i)] for i in range(1, len(by_label) + 1)]
+    for i, (_, start, end) in enumerate(ordered):
+        if not all(math.isfinite(v) for v in (start, end)) or start == end:
+            raise ValueError("端点必须有限且浪长非零")
+        if i and ordered[i - 1][2] != start:
+            raise ValueError("相邻浪端点必须相接")
+    w1, w2, w3 = ordered[:3]
+    up = w1[2] > w1[1]
+    if direction is not None and (direction == "up") != up:
+        raise ValueError("显式方向与第1浪端点不一致")
+    result = []
 
-    waves = [parse_wave(t) for t in args.wave]
-    labels = [w[0] for w in waves]
-    if len(set(labels)) != len(labels):
-        raise SystemExit("[错误] 浪标签重复")
-    for need in ("1", "2", "3"):
-        if need not in labels:
-            raise SystemExit("[错误] 缺少第 %s 浪（--wave \"1:起点:终点\"）；R5/R6 需 1-2-3" % need)
+    def row(rule, status, basis):
+        result.append({"rule": rule, "status": status, "basis": basis})
 
-    w1, w2, w3 = get(waves, "1"), get(waves, "2"), get(waves, "3")
-    w4 = get(waves, "4")
-    w5 = get(waves, "5")
-    up = (w1[2] > w1[1]) if args.dir is None else (args.dir == "up")
-    direction = "上升推动" if up else "下跌推动"
-
-    print("## Rule Check 数值判定（rule_check.py，方向自动识别：%s，R20 极端价位口径）\n" % direction)
-    print("| 规则 | 判定 | 依据 |")
-    print("| --- | --- | --- |")
-    violations = 0
-
-    def row(rule, ok, basis):
-        nonlocal violations
-        print("| %s | %s | %s |" % (rule, "通过" if ok else "违反", basis))
-        if not ok:
-            violations += 1
-
-    # R5：第 2 浪不破第 1 浪起点
-    if up:
-        row("R5", w2[2] >= w1[1],
-            "第 2 浪终点 %.3f %s 第 1 浪起点 %.3f" % (w2[2], "≥" if w2[2] >= w1[1] else "<", w1[1]))
-    else:
-        row("R5", w2[2] <= w1[1],
-            "第 2 浪终点 %.3f %s 第 1 浪起点 %.3f" % (w2[2], "≤" if w2[2] <= w1[1] else ">", w1[1]))
-
-    # R6：第 3 浪不是最短（同时严格短于第 1、5 浪才违反）
-    l1 = abs(w1[2] - w1[1])
-    l3 = abs(w3[2] - w3[1])
+    ok = w2[2] >= w1[1] if up else w2[2] <= w1[1]
+    row("R5", "通过" if ok else "违反", "第2浪终点 %g；第1浪起点 %g（等号允许）" % (w2[2], w1[1]))
+    l1, l3 = abs(w1[2] - w1[1]), abs(w3[2] - w3[1])
+    w4, w5 = by_label.get("4"), by_label.get("5")
     if w5:
         l5 = abs(w5[2] - w5[1])
-        others = [l1, l5]
-        ok6 = l3 >= min(others)
-        row("R6", ok6,
-            "浪长 |1|=%.3f、|3|=%.3f、|5|=%.3f —— 第 3 浪%s最短" %
-            (l1, l3, l5, "并非" if ok6 else "是"))
+        row("R6", "通过" if l3 >= min(l1, l5) else "违反",
+            "浪长 |1|=%g、|3|=%g、|5|=%g；仅第3浪同时严格短于1/5时违反" % (l1, l3, l5))
     else:
-        print("| R6 | 待确认 | 第 5 浪未提供；|1|=%.3f、|3|=%.3f；若第 3 浪已完成且短于第 1 浪，第 5 浪长度须 ≤ %.3f |" % (l1, l3, l3))
-
-    # R7：第 4 浪不进第 1 浪价格区域
+        row("R6", "待确认", "第5浪未提供；|1|=%g、|3|=%g；若第3浪已完成且短于第1浪，第5浪长度须 ≤ %g" % (l1, l3, l3))
     if w4:
-        if up:
-            row("R7", w4[2] > w1[2],
-                "第 4 浪终点 %.3f %s 第 1 浪终点（区域下沿）%.3f" % (w4[2], ">" if w4[2] > w1[2] else "≤", w1[2]))
-        else:
-            row("R7", w4[2] < w1[2],
-                "第 4 浪终点 %.3f %s 第 1 浪终点（区域上沿）%.3f" % (w4[2], "<" if w4[2] < w1[2] else "≥", w1[2]))
+        ok = w4[2] > w1[2] if up else w4[2] < w1[2]
+        row("R7", "通过" if ok else "违反", "第4浪终点 %g；第1浪终点 %g（触及即违反）" % (w4[2], w1[2]))
     else:
-        print("| R7 | 不适用 | 未提供第 4 浪 |")
-
-    # R17/R29：失败第 5 浪位置前提
+        row("R7", "不适用", "未提供第4浪")
     if w5:
-        if up:
-            fail_pos = w5[2] <= w3[2]
-            basis = "第 5 浪终点 %.3f %s 第 3 浪终点 %.3f（未创新高）" % \
-                    (w5[2], "≤" if fail_pos else ">", w3[2])
-        else:
-            fail_pos = w5[2] >= w3[2]
-            basis = "第 5 浪终点 %.3f %s 第 3 浪终点 %.3f（未创新低）" % \
-                    (w5[2], "≥" if fail_pos else "<", w3[2])
-        print("| R17/R29 | %s | %s；子浪是否完整五浪由模型确认（G12），满足才可标失败浪 |"
-              % ("位置满足" if fail_pos else "位置不满足（第 5 浪已超越第 3 浪终点——非失败浪，按普通第 5 浪核对 R6）", basis))
+        failure = w5[2] <= w3[2] if up else w5[2] >= w3[2]
+        row("R17/R29", "位置满足" if failure else "位置不满足",
+            "第5浪终点 %g；第3浪终点 %g；失败浪的内部完整五浪仍须另核" % (w5[2], w3[2]))
     else:
-        print("| R17/R29 | 不适用 | 未提供第 5 浪 |")
+        row("R17/R29", "不适用", "未提供第5浪")
+    return result
 
-    print("\n形态类规则（R8–R16、R21–R28）与 R18 计数一致性、R25/R30 身份判定由模型逐条核对；"
-          "存在'违反'时该方案按 R19 判规则失效，脚本只输出数值事实。")
-    return 1 if violations else 0
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="普通推动数值规则检查（R5/R6/R7/R17/R29）")
+    ap.add_argument("--wave", action="append", required=True, help="重复传入 标签:起点价:终点价")
+    ap.add_argument("--dir", choices=["up", "down"])
+    args = ap.parse_args(argv)
+    waves = [parse_wave(t) for t in args.wave]
+    try:
+        records = evaluate(waves, args.dir)
+    except ValueError as exc:
+        raise SystemExit("[错误] " + str(exc)) from exc
+    print("## Rule Check 数值判定（rule_check.py，R20 极端价位口径）\n")
+    print("| 规则 | 判定 | 依据 |\n| --- | --- | --- |")
+    for r in records:
+        print("| {rule} | {status} | {basis} |".format(**r))
+    print("\n形态、级别与内部完成状态须另行核对；这里只检查给定端点下的数值。")
+    return int(any(r["status"] == "违反" for r in records))
 
 
 if __name__ == "__main__":

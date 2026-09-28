@@ -270,12 +270,15 @@ def render_jianming(jm):
     pts = parts[0]
     for i in range(1, len(parts)):
         pts += ("→" if i == 1 else "-") + parts[i]
+    rating = str(jm["neely得分"]).strip()
+    if rating in {"1", "2", "3"}:
+        rating = "+" + rating
     return (
         "主方案：大级别%s，%s（最后一个为终点）\n"
         "小级别：目前处于%s，点位日期和上面一样\n"
-        "Neely：得分+%s，%s\n"
+        "Neely：得分%s，%s\n"
         "总结：目前%s"
-        % (jm["大级别浪"], pts, jm["小级别浪"], jm["neely得分"], jm["neely强度"], jm["结论"])
+        % (jm["大级别浪"], pts, jm["小级别浪"], rating, jm["neely强度"], jm["结论"])
     )
 
 

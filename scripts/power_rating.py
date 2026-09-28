@@ -3,8 +3,8 @@
 """Power Rating 功率评级查询（Neely 修正浪量化评级，16 口径 / D35）。
 
 用途：根据**已完成修正浪的类型** → 输出该修正浪的功率评级（+3…0…-3，按
-"向上完成 / 向下完成"两种方向）+ "被下一形态回撤的预期比例"。
-——类型由模型数浪确定（脚本不识别形态），脚本只做"查表 + 回撤预测"。
+"向上完成 / 向下完成"两种方向）+ "适用条件下的后势参考"。
+——类型由模型数浪确定（脚本不识别形态），脚本只做查表，不验证完成状态、压缩或父级位置。
 
 用法：
     python power_rating.py --type "Double Zigzag"
@@ -19,8 +19,8 @@
     Double Three / Triple Three / Running Correction
     Double Three-Running / Triple Three-Running
 
-输出：markdown 表（类型 | 向上完成 | 向下完成 | 预期回撤）+ 关联提示。
-回撤预测：评级 0 → 约 100%；±1 → ≤90%；±2 → ≤80%；±3 → 60–70%。
+输出：markdown 表（类型 | 向上完成 | 向下完成 | 后势参考）+ 适用条件。
+依据：Mastering Elliott Wave ch10 页10-1–10-6；0无固定回撤值，非零须分方向和变体。
 """
 
 import argparse
@@ -36,33 +36,30 @@ RATINGS = [
     ("Double Flat", 2, -2),
     ("Elongated Zigzag", 1, -1),
     ("Elongated Flat", 1, -1),
-    ("Zigzag", 1, -1),
+    ("Zigzag", 0, 0),
     ("B-Failure", 0, 0),
     ("Common", 0, 0),
-    ("C-Failure", 0, 0),
+    ("C-Failure", -1, 1),
     ("Irregular", -1, 1),
-    ("Irregular Failure", -1, 1),
+    ("Irregular Failure", -2, 2),
     ("Double Three", -2, 2),
     ("Triple Three", -2, 2),
-    ("Running Correction", -2, 2),
+    ("Running Correction", -3, 3),
     ("Double Three-Running", -3, 3),
     ("Triple Three-Running", -3, 3),
 ]
 
-# Triangle 例外：下列变体在三角形内评级归 0（16 表注）
-TRI_EXC = {"Elongated Zigzag", "Elongated Flat", "Zigzag"}
-
-
 def retrace_label(rating):
-    """评级 → 下一形态预期回撤比例（16 第 3 节 / D35）。"""
-    a = abs(rating)
-    if a == 0:
-        return "约 100%（可被完全回撤）"
-    if a == 1:
-        return "不超过约 90%"
-    if a == 2:
-        return "不超过约 80%"
-    return "最少，约 60–70%"
+    """传入表中向上完成列；相反完成方向使用对应相反符号，条件见16/D35。"""
+    if rating == 0:
+        return "无固定回撤比例（可超过100%）"
+    if rating < 0:
+        return "反向力量情景，查具体变体；不套绝对值回撤上限"
+    if rating == 1:
+        return "适用位置下一般不超过约90%"
+    if rating == 2:
+        return "适用位置下一般不超过约80%"
+    return "适用位置下一般约60–70%"
 
 
 def main(argv=None):
@@ -78,14 +75,14 @@ def main(argv=None):
 
     name, up, down = hit
     print("## Power Rating 功率评级（power_rating.py，16 口径 / D35）\n")
-    print("| 类型 | 向上完成 | 向下完成 | 预期回撤（按绝对值） |")
+    print("| 类型 | 向上完成 | 向下完成 | 后势参考（须核对方向和位置） |")
     print("| --- | --- | --- | --- |")
     print("| %s | %+d | %+d | %s |" % (name, up, down, retrace_label(up)))
-    if name in TRI_EXC:
-        print("\n> 提示：%s 在三角形（Triangle）内部分变体评级归 0（16 表注）。" % name)
-    print("\n> 应用：\u00b1(1\u20133) 的向上修正浪**不应**被下一同级形态完全回撤；"
-          "若被「更接近 0 但同级」形态完全回撤 → 市场在酝酿 Triangle 或 Terminal。"
-          "Power Rating 仅作波浪层内部量化参考，**不并入 8 因子权重（D25）**。")
+    print("\n> 以下正负分支为项目保守解释，不是原书逐字算法；原书一般幅度描述与具体变体预期须合看。幅度参照仅用于向上正评级／向下负评级且位置适用的情景；"
+          "向上负评级／向下正评级须查具体变体，例如 C-Failure、Irregular Failure 有完全回撤预期。")
+    print("\n> 先压缩并确认最大已完成形态及末段完成方向；Triangle 或 Terminal 的腿"
+          "不一定传递评级含义，不统一归零。同级完全回撤且后者更接近0只提示复查，不能单独定形。"
+          "Power Rating 不并入8因子权重（D25），也不产生Rule失效价位。")
     return 0
 
 
