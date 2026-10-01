@@ -47,6 +47,8 @@ def main():
     with open(tpl_path, encoding="utf-8") as f:
         md = f.read()
     rc.check_invalidation_anchor(md, "分析报告模板 %s" % tpl_path)
+    if "{{分析尺度与覆盖}}" not in md:
+        fail("分析报告模板缺少分析尺度与覆盖；请从源文件重新构建并同步安装")
 
     # 1) 表格（Markdown 表格，先于文本，避免表格内容被后续替换误伤）
     for tname, cols in rc.TABLE_FIELDS.items():
@@ -54,7 +56,8 @@ def main():
 
     # 2) 文本字段 + 简明分析说明 + 标的名称/代码
     mapping = dict(fields)
-    mapping.update({"标的名称": name, "标的代码": code, "简明分析说明": rc.render_jianming(jm)})
+    mapping.update({"标的名称": name, "标的代码": code, "简明分析说明": rc.render_jianming(jm, data["analysis_scope"]),
+                    "分析尺度与覆盖": rc.render_scope(data)})
     md = rc.substitute(md, mapping)
 
     # 3) 模板说明文字里的字面 {{表名}} / {{字段名}} 非数据占位符，中和防残留误判

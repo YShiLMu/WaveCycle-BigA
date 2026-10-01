@@ -11,11 +11,12 @@ data.json 模式（顶层键）：
       "fields": { <PAGE_FIELDS 中各字符串字段> },
       "tables": { <TABLE_FIELDS> 各表为 list[dict]，键与列头一一对应 },
       "简明分析说明": { "大级别浪": "第4浪", "小级别浪": "第4浪的b浪",
-                        "neely得分": 1, "neely强度": "中等", "结论": "偏多",
-                        "端点": [ {"价": 1111, "日": "2025-01-01"}, ... ] }  # 末项=终点
+                        "neely得分": 1, "neely强度": "中等",
+                        "结论": "偏多" }  # 各层价日及状态从analysis_scope读取，不另填端点
     }
 细分深度 2/3 必填；细分深度来源（用户确认-2层/用户确认-3层/非交互默认-2层）必填且与深度匹配
 （3 层须匹配用户确认-3层，见 06 R35 / 09 D37）；分析前提表必须含"细分深度来源"行。
+正式报告须含analysis_scope（D41），由wave_facts按CSV生成并逐父浪保留缺证。
 失效价位表固定列：方案 / 失效价位 / 方向（break-down/break-up，--from-report 零推断依赖）/
 规则依据 / 触发后果；两个模板 {{失效价位表}} 外侧带 INVALIDATION-TABLE 锚点
 （invalidation_check.py --from-report 抽取依赖，check_invalidation_anchor 校验缺失即报错）。
@@ -28,6 +29,7 @@ import base64
 import math
 
 from naming import IMAGE_PLACEHOLDERS, validate_component
+from analysis_scope import validate_scope, scope_tables, endpoint_chain
 
 # 文本字段（字符串直接替换占位符）；简明分析说明为独立对象，不在此列
 PAGE_FIELDS = [
@@ -36,7 +38,7 @@ PAGE_FIELDS = [
     "概率说明", "概率结论", "交易计划", "风险提示", "更新跟踪",
     "数据来源", "生成时间",
 ]
-# 简明分析说明对象必填键（不含"端点"，端点单独校验为数组）
+# 简明分析说明仅含解释；各层价日从同一覆盖事实读取。
 JIANMING_KEYS = ["大级别浪", "小级别浪", "neely得分", "neely强度", "结论"]
 # 表格：表名 → 固定列头
 TABLE_FIELDS = {
@@ -162,12 +164,8 @@ def validate(data):
     jm_missing = [k for k in JIANMING_KEYS if k not in jm]
     if jm_missing:
         fail("简明分析说明 缺少键: %s" % "、".join(jm_missing))
-    endpoints = jm.get("端点")
-    if not isinstance(endpoints, list) or not endpoints:
-        fail("简明分析说明.端点 应为非空数组（末项=终点）")
-    for i, ep in enumerate(endpoints):
-        if not isinstance(ep, dict) or "价" not in ep or "日" not in ep:
-            fail("简明分析说明.端点 第 %d 项应为 {价, 日}" % (i + 1))
+    if "端点" in jm:
+        fail("简明分析说明不再另填端点；价日与状态统一从analysis_scope版本2读取")
 
     empty_tables = []
     for tname, cols in TABLE_FIELDS.items():
@@ -238,10 +236,20 @@ def validate(data):
     source_rows = [r for r in tables["分析前提"] if r["项"] == "细分深度来源"]
     if len(source_rows) != 1 or source_rows[0]["内容"] != depth_source:
         fail("分析前提中的细分深度来源与顶层字段不一致")
-    for ep in endpoints:
-        finite_number(ep["价"], "端点价")
+    try:
+        validate_scope(data.get("analysis_scope"), depth, active_plans)
+    except ValueError as exc:
+        fail(str(exc))
 
     return name, code, stamp
+
+
+def render_scope(data, html=False):
+    """从同一结构化记录生成尺度与逐父浪覆盖表。"""
+    premise, coverage = scope_tables(data["analysis_scope"])
+    renderer = render_html_table if html else render_md_table
+    return renderer(["项", "内容"], premise) + "\n\n" + renderer(
+        ["方案", "父浪", "候选起止点", "观察区间", "摆动确认", "完成声明", "细分状态", "扫描事实", "依据与补证"], coverage)
 
 
 def render_html_table(cols, rows):
@@ -264,21 +272,25 @@ def render_md_table(cols, rows):
     return "\n".join(lines)
 
 
-def render_jianming(jm):
+def render_jianming(jm, scope=None):
     """简明分析说明对象 → 4 行文本（日期 YYYY-MM-DD）。"""
-    parts = ["%s/%s" % (e["价"], e["日"]) for e in jm["端点"]]
-    pts = parts[0]
-    for i in range(1, len(parts)):
-        pts += ("→" if i == 1 else "-") + parts[i]
+    pts = child_pts = "端点未绑定覆盖事实"
+    observation = ""
+    if scope is not None:
+        scheme = next(s for s in scope["schemes"] if s["name"] == "主方案")
+        pts = endpoint_chain([w for w in scheme["waves"] if "-" not in w["path"]])
+        child_pts = endpoint_chain([w for w in scheme["waves"]
+                                   if "-" in w["path"] and w["path"].rsplit("-", 1)[0] == scheme["current_parent"]])
+        observation = "；行情观察截至" + scope["data_end"]
     rating = str(jm["neely得分"]).strip()
     if rating in {"1", "2", "3"}:
         rating = "+" + rating
     return (
-        "主方案：大级别%s，%s（最后一个为终点）\n"
-        "小级别：目前处于%s，点位日期和上面一样\n"
+        "主方案：大级别%s，%s%s\n"
+        "小级别：目前处于%s，%s\n"
         "Neely：得分%s，%s\n"
         "总结：目前%s"
-        % (jm["大级别浪"], pts, jm["小级别浪"], rating, jm["neely强度"], jm["结论"])
+        % (jm["大级别浪"], pts, observation, jm["小级别浪"], child_pts, rating, jm["neely强度"], jm["结论"])
     )
 
 

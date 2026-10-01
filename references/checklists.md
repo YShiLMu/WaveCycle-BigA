@@ -8,6 +8,8 @@
 >
 > **前置依赖**：术语见 `references/terminology.md`，推动浪识别见 `references/patterns.md（推动浪）`，规则见 `references/rules.md`，概率经验见 `references/guidelines.md`，复核接口见 `references/workflow.md（第 3 步）`。
 
+机械项可直接引用wave_facts.py保存的本方案／父浪路径记录（references/tool_discipline.md第7节）：端点来源、段数、父子闭合、普通推动数值规则已批量核对时不重复手算。记录为待确认或未覆盖的内部结构，仍须逐项核对，不能用机械出口0替代全清单通过。
+
 ### 1. 使用说明与输入
 
 #### 1.1 输入
@@ -41,6 +43,8 @@
   - 判定标准：是否声明父级形态与位置、前序依据及尚缺证据？声明完整，或多个暂定框架及复核条件均明确 → 通过（仅指声明要求，不等于父级身份已确认）；遗漏框架或明知前序缺失仍宣称唯一确认 → 违反该流程要求。资料未能证实的具体结构项分别判不适用，不凭换周期或改级别名称判其通过。
 
 本节只细化既有 R1/R4/R31 的证据检查，不新增理论规则与分数。主备是否有实质区别交由 C6-3；父级身份待确认不妨碍分别检查已经可见的局部结构。
+
+项目交付另核对D41：日线第一层已建立年尺度框架及历史扫描依据；analysis_scope逐方案列框架起点、当前父浪与复核条件，逐父浪列细分证据和补证。没有逐浪记录不能用“深度3”代替实际检查；短框架须披露原因，不能因时间跨度短而宣称违反某条波浪Rule。
 
 ### 3. 推动浪三铁律校验
 
@@ -486,6 +490,8 @@
 > **本文件定位**：校验清单之一，专用于比率目标（回撤、延伸、比率关系）与共振区（Confluence）的计算基准、刻度与独立性的逐条校验；是 references/guidelines.md G5–G8 与 `references/fibonacci.md` 的落地检查表。不重新数浪、不展开理论；发现计算错误时退回第 2 步 修正。
 >
 > **前置依赖**：术语见 `references/terminology.md`，比率表与公式见 `references/fibonacci.md`，规则见 `references/rules.md`，概率经验见 `references/guidelines.md`，复核接口见 `references/workflow.md（第 3 步）`。
+
+公式结果优先引用wave_facts.py／target_calc.py的原始结果（references/tool_discipline.md第7节），不转抄端点重算。脚本的条件目标不代替来源独立性、目标合法范围、容差与共振核验；这些项目缺证时不得自动记通过。
 
 ### 1. 使用说明与输入
 

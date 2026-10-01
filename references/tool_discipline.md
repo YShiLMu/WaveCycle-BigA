@@ -28,12 +28,14 @@
 > 下列参数名由 build 从各脚本 `--help` 自动抓取（防漂移）；**取值格式与含义见各脚本 `--help`**，第 2 节已列出最易错的几条。
 
 <!-- CLI-PARAM-TABLE-BEGIN -->
-- **`ew_chart.py`**：`-h` `--csv` `--out` `--out-auto` `--title` `--waves` `--invalid` `--level` `--current` `--fib` `--last` `--start` `--gann` `--gann-auto-scale` `--gann-index` `--font-scale` `--theme` `--path` `--channel` `--pivot`
+- **`ew_chart.py`**：`-h` `--csv` `--out` `--out-auto` `--title` `--waves` `--invalid` `--level` `--current` `--fib` `--last` `--start` `--gann` `--gann-auto-scale` `--gann-index` `--font-scale` `--theme` `--path` `--channel` `--pivot` `--scope-file` `--scheme`
 - **`swings.py`**：`-h` `--csv` `--k` `--start` `--end` `--weekly` `--chart-args` `--tail` `--path` `--dow` `--fib`
 - **`key_levels.py`**：`-h` `--start` `--end` `--csv` `--shadow-ratio` `--trend-threshold` `--window` `--swing-k` `--cluster-tolerance` `--recent` `--gap-band` `--max-levels`
 - **`preflight.py`**：`-h` `--csv` `--source` `--fq` `--k` `--start` `--end` `--weekly` `--tail` `--no-dow` `--no-key-levels` `--key-levels-args` `--compact` `--no-compact`
 - **`rule_check.py`**：`-h` `--wave` `--dir`
 - **`score.py`**：`-h` `--scheme`
+- **`wave_facts.py`**：`-h` `--csv` `--data` `--out` `--format` `--scheme` `--path`
+- **`target_calc.py`**：`-h` `--start` `--end` `--kind` `--anchor` `--direction` `--ratio` `--format`
 <!-- CLI-PARAM-TABLE-END -->
 
 ## 3. 输出读取纪律
@@ -57,11 +59,122 @@
   from matplotlib import font_manager
   names = {f.name for f in font_manager.fontManager.ttflist}
   ok = "Microsoft YaHei" in names
+  ```
 
 ## 6. 数浪出图呈现规范（浪级配色与进行中段）
 
 - **第一层（大级别）线 = 白色**：大级别浪（1-2-3-4-5、A-B-C）用 `ew_chart.py --path` **无连字符**标签（如 `1`、`2`、`A`）绘制，呈白色。
 - **第二层（子浪）线 = 绿/青**：子浪细分用 `--path` **带连字符**标签（如 `1-1`、`2-a`）绘制，呈绿/青。
-- **`--waves` 不作白/绿分层**：`--waves` 仅作大级别底图，其 up/down 方向色（青色/蓝色）**不承担**首层白/次层绿的约定；需要白/绿分层时一律用 `--path` 按上述标签规则。
+- **`--waves` 不作白/绿分层**：此参数仅用于无scope的工具调试，其up/down方向色（青／蓝）不承担首层白／次层绿约定；正式图各层一律用已绑定scope的`--path`，进行中段由scope生成灰虚线。
 - **进行中段画法**：进行中的浪段只画到**最后一个已确认子浪**（实线），其后未走完段用**虚线 + "进行中"**，**禁止预标**未发生的第 4/5 子浪或未走完的 A-B-C 内部结构（references/rules.md R34、09 D39）。
-  ```
+
+## 7. 候选事实批量入口（wave_facts / target_calc）
+
+### 7.1 一次登记，多处复用
+
+`wave_facts.py --csv <行情CSV> --data <候选JSON> --out <系统临时目录内绝对路径/facts.json>` 默认只打印异常与缺证摘要；完整结果供脚本读取。`--format json`只在需要完整数据时使用，禁止把完整JSON和摘要重复加载。`--scheme <方案名> --path <浪路径>`展开局部明细，退出码仍检查全部方案。默认每方案最多列20条问题，优先列违反项并披露省略数量；按路径展开时不截断该局部。
+
+候选JSON顶层键：`version:1`、`as_of:"YYYY-MM-DD"`（信息截止日）、`depth:2或3`、`schemes:[...]`。每个方案含`name`、`degree`、`groups`及可选`targets`。这里的depth只检查已选深度的覆盖，不替代D37/R35的用户确认与来源登记。
+
+每组含：`path`（根组为空串，子组为父浪路径如`1`、`1-3`）、`pattern`、`completed`（明确布尔值）、`k`（正整数，省略为3）、`points`（按时间顺序）。每点含`label`、`index`、`kind`（H/L）；起点标签固定`0`，后续每个浪终点还须明确`completed`。索引从0起，指向原CSV数据行；不填price，脚本取high/low。各层可使用不同k，但须登记；端点确认只使用截止日内数据，不用后来数据回填。
+
+支持的pattern及直接组成：`impulse`／`diagonal`→1–5；`zigzag`／`flat`→A/B/C；`triangle`→A–E；`double_combination`→W/X/Y；`triple_combination`→W/X/Y/X2/Z。X2仅是第二个X的内部唯一标识，绘图参数显示为X；不能把这个标识当作新增形态。`unknown`仅保留事实与缺证。进行中组允许正确的组成前缀，不能跳段或虚填尚未形成的末段。完成声明是输入前提，摆动确认不等于内部结构完成。
+
+以下只示意根组和目标登记；实际应补齐各父浪的下一层组，并使用真实摆动索引：
+
+```json
+{
+  "version": 1,
+  "as_of": "2026-02-06",
+  "depth": 2,
+  "schemes": [{
+    "name": "主方案", "degree": "Minor",
+    "groups": [{
+      "path": "", "pattern": "impulse", "completed": true, "k": 1,
+      "points": [
+        {"label": "0", "index": 1, "kind": "L"},
+        {"label": "1", "index": 11, "kind": "H", "completed": true},
+        {"label": "2", "index": 15, "kind": "L", "completed": true},
+        {"label": "3", "index": 19, "kind": "H", "completed": true},
+        {"label": "4", "index": 23, "kind": "L", "completed": true},
+        {"label": "5", "index": 27, "kind": "H", "completed": true}
+      ]
+    }],
+    "targets": [
+      {"base": "1", "kind": "retracement", "ratios": [0.382, 0.5, 0.618]},
+      {"base": "1", "kind": "projection", "anchor": "2", "direction": "up", "ratios": [1, 1.618]}
+    ]
+  }]
+}
+```
+
+新增子组`path:"1"`时，points起点须与根组第1浪起点一致；已完成子组终点须与该父浪终点闭合。其直接子浪自动获得`1-1`等路径。targets的base和anchor必须引用本方案存在的浪路径；anchor取该浪终点。回撤不另设anchor/direction，方向从基准推导；投射必须明确up/down。
+
+### 7.2 输出边界与调用纪律
+
+完整结果含截止日内行情指纹、各浪端点／价差长度／端点序号差／前浪长度比、各层机械检查、条件目标、已确认且声明完成的实线绘图参数。每浪另有segment_extrema（候选起止区间真实high/low）和inspection（观察区间、真实极值、k=5→3→1各窗口实际摆动）。已声明完成的浪扫描固定历史区间；未完成浪扫描至行情末日，不能停在暂定止点。分形先用完整截止序列计算再过滤到区间，起止锚点另保留；不存在拐点时输出空数组，不编造。端点范围外极值列“区间极值复核”，要求重查端点／简单调整／组合结构，合法越界另解释，不自动判Rule违反。普通推动复用rule_check数值接口；楔形不套R7。扫描事实不自动决定浪级、形态或完成状态。
+
+退出码0=未发现机械违反，仍可有“待核对／待确认”；1=发现违反，须看rule和basis区分Rule反例与段数、登记或完成声明问题；2=输入或调用错误。完整结果即使有违反也会保存，供定位；不得将有违反的候选参数直接用于正式交付。图形参数只是确认端点的前缀，未完成段另按R34处理；图标题、失效线、深度来源、PNG目检仍遵守原流程。评分及报告表格的自动衔接不在本批范围内。
+
+只需独立计算时用`target_calc.py --start <基准起价> --end <基准止价> --kind retracement`；投射另传`--anchor <起算价> --direction up/down`，倍率用重复`--ratio`。计算用线性价差，原始结果不舍入；摘要仅格式化显示，不用于边界判断。目标合法范围、共振去重、适用位置和时间比率仍按08文件核对。
+
+候选JSON和facts.json均为过程数据，放系统临时目录；不能作为新增交付文件进入分析输出。后续取价与计算复用同一结果，不重新手抄端点。行情、截止日、k、形态或端点改变时重新计算，不凭旧结果沿用通过状态。
+
+## 8. 分析尺度与逐浪覆盖契约（analysis_scope，D41）
+
+### 8.1 候选输入：只补框架解释与缺证
+
+日线默认先扫描多年历史，第一层年尺度→第二层月尺度→第三层日尺度；时间尺度仅为项目观察约定，不能据时间自动命名浪级或否定短促子浪。D37仍决定2/3层及确认来源，已明确的用户答复直接复用。其他观察尺度仅用户明确要求时设置profile=user-defined、source=user-request，并填scope_basis；不能为了绕开长期框架而自行选择。
+
+正式分析在第7节候选JSON顶层增加以下analysis_scope元数据。此例仅示意字段，日期和解释必须替换为当次证据；主备各登记一项，不固定第一层起点为案例答案：
+
+```json
+{
+  "profile": "daily-year-month-day",
+  "history_review": "已扫描全部可得历史的主要高低点；列具体日期、结构依据及前序资料缺口",
+  "schemes": [{
+    "name": "主方案",
+    "framework_start": "2024-09-24",
+    "current_parent": "3",
+    "basis": "第一层候选框架依据，列前序结构和当前父级位置",
+    "review_condition": "哪些新增结构或补齐历史将使框架重新评估",
+    "gaps": [{
+      "path": "3-1",
+      "state": "unresolved",
+      "evidence": "该父浪日线已检查哪些k窗口及实际结构问题",
+      "needed": "补该历史区间更细数据或重数父级；以下示例必须替换成真实检查",
+      "review": {
+        "reason": "resolution",
+        "windows": [
+          {"k": 5, "finding": "列该窗口真实价日与拐点不足的位置"},
+          {"k": 3, "finding": "列缩小窗口新增的价日、候选组成及冲突"},
+          {"k": 1, "finding": "列最细日线检查结果、规则反例或剩余分辨率限制"}
+        ],
+        "next_action": "finer_data"
+      }
+    }]
+  }]
+}
+```
+
+每个未展开或仅部分展开、且尚未到本次最深层的父浪必须各填gaps：path为实际父浪路径，state只允许in_progress（进行中）或unresolved（缺证／多解）。evidence、needed解释实际问题，review.windows须按k=5、3、1逐项列finding，与脚本生成的inspection摆动事实相互核对；仅写“尚未形成唯一序列”不构成检查。review.reason：ambiguity=多种具体数法（另列至少两种alternatives及支持／冲突）、resolution=日线分辨率不足、structure_conflict=结构反例待重数、ongoing=实际进行中。next_action：recount=重数父级、finer_data=补该区间更细数据、wait=等待后续；wait只用于ongoing，completed=true的历史浪禁止wait/ongoing/in_progress。已完成且子组端点闭合可不填gap；未完成子组即使止点重合仍须留具体缺证。gaps不能引用不存在的父浪或最深层浪。
+
+每个方案的framework_start须与其根组起点一致；current_parent须指向真实第一层浪。第一层框架至截止日不足365个自然日，还须填short_scope_reason（为何较早结构未能支持年尺度框架，包括已核验的前序）与supplement（补证或复核要求）。不能只写“候选”“有限历史”。365日是项目覆盖披露阈值，不是波浪Rule，不要求每浪都跨一年。
+
+### 8.2 事实输出与报告输入
+
+wave_facts从截止日内CSV生成analysis_scope的version=2、data_start/data_end及每个方案waves；元数据的gaps转换为逐浪覆盖记录。报告data.json顶层直接使用该完整analysis_scope，不能手工改短框架、极值或删掉不便解释的父浪。候选JSON仍为version=1，两个版本属于不同对象。旧报告状态仍可提取，但正式重新渲染须用CSV重建版本2；局部候选可不传该字段用于调试，不能直接交付。
+
+完整对象保留在临时facts.json，合并到临时报告data.json时由脚本读JSON并复制字段；模型只读取异常摘要和必要的局部明细，不把整个覆盖树重复加载后再手抄。候选端点或截止日改变时重新生成，不能只改报告里的日期。
+
+完整waves每项：path、start/end（候选起止日期）、start_price/end_price（CSV影线价）、completed（分析者的完成声明）、confirmed（价格拐点已有后续反向摆动）、inspection（实际扫描事实）、state、evidence；缺证父浪另有needed和review。confirmed只证明价格拐点，不证明某一浪已经完成。state：expanded=父浪和直接子浪均声明完成、下一层端点登记并闭合；in_progress=实际仍进行中、只登记已发生前缀；unresolved=具体缺证／多解；leaf=本次最深层。expanded/leaf都不等于内部形态经Rule确认。inspection.start/end为实际观察区间，未完成浪观察到data_end，与暂定止点日期分开。报告分别显示候选价日、观察区间、摆动确认、完成声明、细分状态、真实极值和窗口检查，不能合并成“未形成浪”。扫描能证明已计算哪些摆动，不证明模型真的核验了每个形态，review仍须语义复核。
+
+简明分析说明不再手填端点数组；大级别价日从主方案第一层waves生成，小级别价日从current_parent的直接子浪生成。未完成浪显示“暂定止点，未完成”，已声明完成仍称“完成终点候选”，不给尚未发生的浪日期，不无条件写“最后一个为终点”，不复用大级别日期冒充小级别日期。
+
+两个报告生成器从该对象自动填充模板中的 `{{分析尺度与覆盖}}`，显示历史扫描、各方案第一层框架与逐父浪覆盖表；不用在fields/tables中重复填。内嵌状态保存该对象以供续做。从零重跑独立核验历史，不锁定旧数法；续做若改变框架，在报告第8章列新旧起点与证据。
+
+### 8.3 正式图表绑定
+
+使用 `ew_chart.py --csv <行情CSV> --scope-file <系统临时目录内报告data.json> --start <第一层framework_start> --out-auto "<图表目录>|主方案|全景"` 并传同方案多条逐点标签--path。--out-auto必须提供scope-file；普通--out若用于正式图也必须传scope-file与--scheme。CSV起止及影线价须与scope匹配，追加未来行情按scope截止日截断；--start等于第一层起点，禁止--last裁掉框架。全部已完成且有反向摆动确认的端点须在对应层级--path出现；根组首点0，每个子组首点父路径-0。正式图不接受另填--waves/--pivot绕开状态；未完成段从scope自动派生灰虚线，并说明暂定止点及观察截止，不画未来终点。
+
+每层单独--path，起点／层级／端点检查只是机械门槛，图表仍须目检。任何缺证都按实际区间登记，不硬补第三层；不把检查记录齐全等同于三层全部确认。

@@ -316,6 +316,24 @@ def main(argv=None):
     data = {
         "标的名称": "冒烟", "标的代码": "000000", "时间戳": "20260101_1200",
         "报告模式": "标准", "细分深度": 2, "细分深度来源": "用户确认-2层",
+        "analysis_scope": {
+            "version": 2, "profile": "daily-year-month-day", "data_start": "2024-01-01",
+            "data_end": "2026-01-01", "history_review": "合成长期框架；不代表真实市场结论",
+            "schemes": [{"name": plan, "framework_start": "2024-01-01", "current_parent": "1",
+                         "basis": "合成框架", "review_condition": "补核内部子浪",
+                         "waves": [{"path": "1", "start": "2024-01-01", "end": "2026-01-01",
+                                    "state": "unresolved", "completed": False, "confirmed": False,
+                                    "start_price": 100., "end_price": 160.,
+                                    "inspection": {"start": "2024-01-01", "end": "2026-01-01",
+                                                   "extrema": {"high": {"date": "2026-01-01", "price": 160.},
+                                                               "low": {"date": "2024-01-01", "price": 100.}},
+                                                   "windows": [{"k": k, "pivots": []} for k in (5, 3, 1)]},
+                                    "review": {"reason": "resolution", "next_action": "finer_data",
+                                               "windows": [{"k": k, "finding": "合成%d窗口未提供内部行情，仅验证渲染契约" % k}
+                                                           for k in (5, 3, 1)]},
+                                    "evidence": "该合成父浪未核验内部形态", "needed": "补核内部结构"}]}
+                        for plan in ("主方案", "替代方案")],
+        },
         "fields": {
             "分析日期": "2026-01-01", "分析级别": "日线级别", "收盘价": str(last_close),
             "主方案说明": "测试", "主方案失效": "测试", "替代方案": "测试",
@@ -337,7 +355,6 @@ def main(argv=None):
         "简明分析说明": {
             "大级别浪": "第4浪", "小级别浪": "第4浪的b浪",
             "neely得分": 1, "neely强度": "中等", "结论": "偏多",
-            "端点": [{"价": 100, "日": "2024-01-01"}, {"价": 160, "日": "2024-02-01"}],
         },
     }
     payload = json.dumps(data, ensure_ascii=False)
@@ -354,6 +371,11 @@ def main(argv=None):
     code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_md.py"),
                           "--data", "-"], stdin_text=json.dumps(bad_dir, ensure_ascii=False))
     check("失效价位表缺方向列被拦截", code != 0 and "方向" in err, (out + err).strip()[:150])
+    bad_scope = {k: v for k, v in data.items() if k != "analysis_scope"}
+    code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_md.py"),
+                          "--data", "-"], stdin_text=json.dumps(bad_scope, ensure_ascii=False))
+    check("缺第一层框架与逐浪覆盖被拦截（D41）", code != 0 and "analysis_scope" in err,
+          (out + err).strip()[:150])
     # 网页
     code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_web.py"),
                           "--data", "-"], stdin_text=payload)
@@ -503,11 +525,11 @@ def main(argv=None):
     code, out, err = run([sys.executable, os.path.join(HERE, "rule_check.py"),
                           "--wave", "1:100:80", "--wave", "2:80:90",
                           "--wave", "3:90:55", "--wave", "4:55:70", "--wave", "5:70:60"])
-    check("下跌推动镜像识别", code == 0 and "下跌推动" in out and "| R7 | 通过 |" in out,
+    check("下跌推动镜像识别", code == 0 and all("| %s | 通过 |" % rule in out for rule in ("R5", "R6", "R7")),
           out.strip()[:200])
     code, out, err = run([sys.executable, os.path.join(HERE, "rule_check.py"),
                           "--wave", "1:100:160", "--wave", "2:160:130"])
-    check("缺第 3 浪报错退出", code != 0 and "缺少第 3 浪" in (out + err), (out + err).strip()[:150])
+    check("缺第 3 浪报错退出", code != 0 and "缺少第1/2/3浪" in (out + err), (out + err).strip()[:150])
     code, out, err = run([sys.executable, os.path.join(HERE, "rule_check.py"),
                           "--wave", "1:100:160", "--wave", "2:160:130", "--wave", "3:abc:220"])
     check("非法价格段报错退出", code != 0 and "不是数字" in (out + err), (out + err).strip()[:150])

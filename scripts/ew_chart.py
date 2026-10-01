@@ -31,6 +31,7 @@ OHLC 合理性：high ≥ low ≥ 0、open/close 落在 [low, high]、日期升�
 """
 
 import argparse
+import json
 import os
 import sys
 
@@ -47,6 +48,7 @@ from matplotlib import font_manager
 
 from ohlc_io import load_ohlc
 from naming import CHART_VIEWS, SCHEME_NAMES, chart_png
+from analysis_scope import check_chart, validate_scope, pending_chart_segments, display_path
 
 # ---------------------------------------------------------------------------
 # 主题（深色为默认）：深色画布下红涨用亮红、绿跌用亮蓝绿，连线用白/亮青，
@@ -116,7 +118,7 @@ def _text_units(s):
     return sum(2 if ord(c) > 0x2E80 else 1 for c in str(s))
 
 
-def _bottom_layout(paths, waves, pivots, levels, invalids, current_price, channels, fs):
+def _bottom_layout(paths, waves, pivots, levels, invalids, current_price, channels, fs, pending_count=0):
     """预计算底部注释区所需行数与画布尺寸（在建 figure 前调用）。
 
     行距不压缩：行数多时按 _BOTTOM_ROW_IN/行 加高底部注释区、同步加高整张画布，
@@ -142,7 +144,7 @@ def _bottom_layout(paths, waves, pivots, levels, invalids, current_price, channe
     wave_col2 = n_lvl[2]
     wave_rows = max(wave_col1, wave_col2)
     legend_rows = (len(levels or []) + len(invalids or [])
-                   + (1 if current_price is not None else 0) + (2 if channels else 0))
+                   + (1 if current_price is not None else 0) + (2 if channels else 0) + pending_count)
     bottom_rows = max(wave_rows, legend_rows, 3)
     row_in = _BOTTOM_ROW_IN
     bottom_in = 0.35 + bottom_rows * row_in
@@ -202,7 +204,7 @@ def _draw_candles(ax, df, last_n=None, t=THEMES["dark"]):
 def draw_chart(df, out_path, title, waves, invalids, current_price=None,
                fib_zones=None, last_n=None, levels=None, font_scale=1.0,
                gann_fans=None, theme="dark", paths=None, channels=None,
-               pivots=None, start=None):
+               pivots=None, start=None, pending=None):
     """绘制单方案 K 线图并保存 PNG。
 
     waves: [(label, start_idx, end_idx, form_note, direction), ...]
@@ -240,7 +242,8 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
     # 底部行距不压缩：先按输入（pivots/paths/waves/levels/invalids…）预估最多行数，
     # 行数多则按 _BOTTOM_ROW_IN/行 加高画布（_bottom_layout），文字永不叠行。
     fig_h, main_in, bottom_in, row_h, _brows = _bottom_layout(
-        paths, waves, pivots, levels, invalids, current_price, channels, fs)
+        paths, waves, pivots, levels, invalids, current_price, channels, fs,
+        sum(_label_level(w["path"]) <= 2 for w in pending or []))
     fig = plt.figure(figsize=(18, fig_h))
     # 布局：主图跨全宽（只画线，不放任何文字）。
     #   下方 2 块：左 = 平行线注释（ax_legend）；右 = 浪型区（ax_waves，内部大浪左列+小浪右列）。
@@ -309,6 +312,12 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
     if channels:
         _draw_channels(ax, plot_df, base, channels, t, fs)
 
+    # 覆盖事实中的未完成段仅画灰虚线，止点只是已发生的观察点。
+    for segment in pending or []:
+        ax.plot([segment["start"] - base, segment["end"] - base],
+                [segment["start_price"], segment["end_price"]],
+                color=t["note"], linewidth=0.9, linestyle="--", alpha=0.8, zorder=5)
+
     # 2) 参考线：只画线，不放标签
     price_floor = plot_df["low"].min()
     price_ceil = plot_df["high"].max()
@@ -335,6 +344,11 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
         legend_lines.append((t["invalid"], "红色虚线", f"{label} {_fmt_price(price)}"))
     if current_price is not None:
         legend_lines.append((t["current"], "绿色实线", f"当前价 {_fmt_price(current_price)}"))
+    for segment in pending or []:
+        if _label_level(segment["path"]) <= 2:
+            legend_lines.append((t["note"], "灰色虚线", "%s进行中：暂定止点%s/%s；观察截至%s" %
+                                 (segment["path"], _fmt_price(segment["end_price"]),
+                                  segment["end_date"], segment["observation_end"])))
     if channels:
         legend_lines.append((t["channel"], "青色实线", "平行通道：上轨=连[1][3]高点"))
         legend_lines.append((t["channel"], "青色虚线", "平行通道：下轨=过[2]低点平行"))
@@ -496,6 +510,34 @@ def _draw_paths(ax, plot_df, base, paths, t, fs):
         if _msg:
             print("[几何自检] %s" % _msg, file=sys.stderr)
     return sub_rows
+
+
+def check_path_prices(df, scope, name, paths):
+    """验证实际绘制的high/low选择，防止日期对齐却画了另一侧影线价。"""
+    scheme = next(s for s in scope["schemes"] if s["name"] == name)
+    waves = scheme["waves"]
+    for indices, labels, overrides in paths:
+        for position, (index, label) in enumerate(zip(indices, labels)):
+            label = label.strip("[]()")
+            override = overrides[position] if overrides else None
+            if override in ("peak", "trough"):
+                peak = override == "peak"
+            elif position == 0:
+                peak = not _seg_direction(df, index, indices[1]) if len(indices) > 1 else False
+            else:
+                peak = _seg_direction(df, indices[position - 1], index)
+            day = df.index[index].strftime("%Y-%m-%d")
+            if position == 0:
+                parent = label.rsplit("-", 1)[0] if "-" in label else ""
+                wave = next(w for w in waves if w["start"] == day and
+                            (display_path(w["path"]) == parent if parent else "-" not in w["path"]))
+                expected = wave["start_price"]
+            else:
+                wave = next(w for w in waves if display_path(w["path"]) == label and w["end"] == day)
+                expected = wave["end_price"]
+            actual = float(df.iloc[index]["high" if peak else "low"])
+            if actual != expected:
+                raise ValueError("--path峰谷选择与覆盖端点价格不一致：" + label + "/" + day)
 
 
 def _draw_channels(ax, plot_df, base, channels, t, fs):
@@ -850,7 +892,8 @@ def main():
                         "端点加编号框；索引后 :peak/:trough 强制取 high/low，用于外包线端点）。"
                         "可多次传入叠加不同层级子浪（如 1-1、1-1-1），"
                         "层级颜色由框标的连字符段数区分（1→白、1-1→青、1-1-1→橙）。"
-                        "子浪必用 --path、大级别底图用 --waves；默认 2 层=每个大级别浪都叠第 2 层子浪，"
+                        "正式图第一层与子浪均用绑定scope的 --path；进行中段由scope自动画虚线；"
+                        "默认 2 层=每个大级别浪都叠第 2 层子浪，"
                         "用户明确要 3 层才叠第 3 层（09 默认口径表 D37）。"
                         "例：--path \"1-1@339,1-2@465\" --path \"1-1-1@360,1-1-2@400\"")
     p.add_argument("--channel", nargs="*", action="append", type=parse_channel_arg, default=[],
@@ -860,6 +903,8 @@ def main():
                    help="大级别浪标注：标注:索引[:peak/trough]（如 [I]:4484:peak），挂在对应端点，"
                         "白框大号字，与子浪编号框区分（分级标注）。peak=波峰标上方默认、"
                         "trough=波谷标下方。例：--pivot \"[I]:4484:peak\" \"[II]:4612:trough\"")
+    p.add_argument("--scope-file", help="正式全景图必填：含analysis_scope及细分深度的报告JSON（临时目录）")
+    p.add_argument("--scheme", choices=SCHEME_NAMES, help="配合--scope-file指定方案；--out-auto可自动识别")
     args = p.parse_args()
 
     # 多值参数（--waves/--invalid/--level/--fib/--gann/--channel/--pivot）：
@@ -886,6 +931,38 @@ def main():
 
     df = load_ohlc(args.csv, set_date_index=True)
 
+    scope_data = None
+    pending = []
+    scheme_name = args.scheme
+    if args.out_auto:
+        if not args.scope_file:
+            p.error("正式全景图--out-auto必须传--scope-file，先建立第一层框架与逐浪覆盖")
+        if scheme_name and scheme_name != parts[1]:
+            p.error("--scheme与--out-auto方案不一致")
+        scheme_name = parts[1]
+    if args.scope_file:
+        if not scheme_name:
+            p.error("--scope-file须配合--scheme或--out-auto")
+        try:
+            with open(args.scope_file, encoding="utf-8-sig") as handle:
+                scope_data = json.load(handle)
+            scope = scope_data.get("analysis_scope")
+            depth = scope_data.get("细分深度")
+            validate_scope(scope, depth, [s["name"] for s in scope.get("schemes", [])])
+            df = df.loc[:scope["data_end"]]
+            if df.empty or df.index[0].strftime("%Y-%m-%d") != scope["data_start"] or df.index[-1].strftime("%Y-%m-%d") != scope["data_end"]:
+                raise ValueError("图表CSV与analysis_scope的数据覆盖范围不一致")
+            if args.waves or args.pivot:
+                raise ValueError("正式图浪端点须用已绑定覆盖事实的--path；进行中段由scope自动画虚线")
+            for scheme in scope["schemes"]:
+                for wave in scheme["waves"]:
+                    for role in ("start", "end"):
+                        bar = df.loc[wave[role]]
+                        if wave[role + "_price"] not in (float(bar.high), float(bar.low)):
+                            raise ValueError("覆盖端点价格与图表CSV影线不一致")
+        except (ValueError, TypeError, AttributeError, KeyError, OSError) as exc:
+            p.error(str(exc))
+
     # --start 起画点（原始 CSV 行号）：数值直接取行号；日期须为数据内交易日，精确匹配（起画点应为 swings 端点所在日）
     start_idx = None
     if args.start:
@@ -899,6 +976,15 @@ def main():
                 raise SystemExit(f"[错误] --start 起画点日期不在数据内: {args.start}")
         if start_idx < 0 or start_idx >= len(df):
             raise SystemExit(f"[错误] --start 起画点越界: {start_idx}（数据共 {len(df)} 根）")
+
+    if scope_data is not None:
+        try:
+            check_chart(scope, depth, scheme_name, [d.strftime("%Y-%m-%d") for d in df.index],
+                        start_idx, args.last, args.path)
+            check_path_prices(df, scope, scheme_name, args.path)
+            pending = pending_chart_segments(scope, scheme_name, [d.strftime("%Y-%m-%d") for d in df.index])
+        except ValueError as exc:
+            p.error(str(exc))
 
     # 江恩扇形：auto 模式统一按第一个锚点价格分档（D23 同一分析内禁止换刻度）
     gann_fans = []
@@ -948,7 +1034,7 @@ def main():
                current_price=args.current, fib_zones=args.fib, last_n=args.last,
                levels=args.level, font_scale=args.font_scale,
                gann_fans=gann_fans, theme=args.theme, paths=args.path,
-               channels=args.channel, pivots=args.pivot, start=start_idx)
+               channels=args.channel, pivots=args.pivot, start=start_idx, pending=pending)
 
 
 if __name__ == "__main__":

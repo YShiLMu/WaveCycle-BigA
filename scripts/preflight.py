@@ -78,6 +78,8 @@ def main(argv=None):
         ap.error("key-levels-args 不得覆盖公共数据或日期窗口")
 
     print("== preflight 1/3：data_check（数据自检 + 四要素，D28）==")
+    print("[尺度D41] 紧凑输出只缩减展示；建第一层年尺度框架前须扫描全历史，"
+          "可用swings --weekly --tail 0辅助，再按日线父浪区间核验。")
     dc_args = ["--csv", args.csv]
     if args.source:
         dc_args += ["--source", args.source]
