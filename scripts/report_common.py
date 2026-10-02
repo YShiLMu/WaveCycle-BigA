@@ -7,15 +7,15 @@
 data.json 模式（顶层键）：
     {
       "标的名称": "...", "标的代码": "...", "时间戳": "YYYYMMDD_HHMM",
-      "细分深度": 2, "细分深度来源": "用户确认-2层",
+      "细分深度": 3, "细分深度来源": "默认-3层",
       "fields": { <PAGE_FIELDS 中各字符串字段> },
       "tables": { <TABLE_FIELDS> 各表为 list[dict]，键与列头一一对应 },
       "简明分析说明": { "大级别浪": "第4浪", "小级别浪": "第4浪的b浪",
                         "neely得分": 1, "neely强度": "中等",
                         "结论": "偏多" }  # 各层价日及状态从analysis_scope读取，不另填端点
     }
-细分深度 2/3 必填；细分深度来源（用户确认-2层/用户确认-3层/非交互默认-2层）必填且与深度匹配
-（3 层须匹配用户确认-3层，见 06 R35 / 09 D37）；分析前提表必须含"细分深度来源"行。
+细分深度3/4必填；三层来源默认-3层或用户确认-3层，四层来源用户确认-4层。
+分析前提须披露来源，交付范围与额外检查证据由analysis_scope版本3保留。
 正式报告须含analysis_scope（D41），由wave_facts按CSV生成并逐父浪保留缺证。
 失效价位表固定列：方案 / 失效价位 / 方向（break-down/break-up，--from-report 零推断依赖）/
 规则依据 / 触发后果；两个模板 {{失效价位表}} 外侧带 INVALIDATION-TABLE 锚点
@@ -29,7 +29,7 @@ import base64
 import math
 
 from naming import IMAGE_PLACEHOLDERS, validate_component
-from analysis_scope import validate_scope, scope_tables, endpoint_chain
+from analysis_scope import validate_scope, scope_tables, endpoint_chain, position_tables
 
 # 文本字段（字符串直接替换占位符）；简明分析说明为独立对象，不在此列
 PAGE_FIELDS = [
@@ -93,10 +93,9 @@ def check_invalidation_anchor(text, label):
              "（invalidation_check.py --from-report 依赖）"
              % (label, INVALIDATION_ANCHOR_BEGIN, INVALIDATION_ANCHOR_END))
 
-# 细分深度（09 默认口径表 D37 / 06 R35）：默认 2 层，3 层须用户明确要求。data.json 顶层
-# "细分深度" 必填（2/3）+ "细分深度来源" 必填且必须匹配（3 层仅用户确认），校验失败即 fail。
-SUBDIVISION_DEPTHS = (2, 3)
-DEPTH_SOURCES = ("用户确认-2层", "用户确认-3层", "非交互默认-2层")
+# 新交付默认三层；旧状态仍可extract_state，但不能直接重新渲染。
+SUBDIVISION_DEPTHS = (3, 4)
+DEPTH_SOURCES = ("默认-3层", "用户确认-3层", "用户确认-4层")
 
 
 def fail(msg):
@@ -133,19 +132,12 @@ def validate(data):
         fail("时间戳 格式应为 YYYYMMDD_HHMM，收到: %r" % stamp)
 
     depth = data.get("细分深度")
-    if depth not in SUBDIVISION_DEPTHS:
-        fail("细分深度 必填且须为 %s（默认 2 层，3 层须用户明确要求，见 09 默认口径表 D37 / 06 R35）；收到: %r"
-             % ("/".join(str(d) for d in SUBDIVISION_DEPTHS), depth))
+    if type(depth) is not int or depth not in SUBDIVISION_DEPTHS:
+        fail("新报告细分深度须为3或4（默认三层，用户要求时四层）")
     depth_source = data.get("细分深度来源")
-    if depth_source not in DEPTH_SOURCES:
-        fail("细分深度来源 必填且须为 %s（06 R35 / 09 D37）；收到: %r"
-             % ("/".join(DEPTH_SOURCES), depth_source))
-    if depth == 3 and depth_source != "用户确认-3层":
-        fail("细分深度=3 必须匹配 细分深度来源=用户确认-3层（3 层仅用户明确要求，06 R35 / 09 D37）；收到: %r"
-             % depth_source)
-    if depth == 2 and depth_source not in ("用户确认-2层", "非交互默认-2层"):
-        fail("细分深度=2 仅匹配 细分深度来源=用户确认-2层 或 非交互默认-2层（06 R35 / 09 D37）；收到: %r"
-             % depth_source)
+    allowed = ("默认-3层", "用户确认-3层") if depth == 3 else ("用户确认-4层",)
+    if depth_source not in allowed:
+        fail("细分深度来源与3/4层不匹配：%r" % depth_source)
 
     fields = data.get("fields")
     tables = data.get("tables")
@@ -165,7 +157,7 @@ def validate(data):
     if jm_missing:
         fail("简明分析说明 缺少键: %s" % "、".join(jm_missing))
     if "端点" in jm:
-        fail("简明分析说明不再另填端点；价日与状态统一从analysis_scope版本2读取")
+        fail("简明分析说明不再另填端点；价日与状态统一从analysis_scope版本3读取")
 
     empty_tables = []
     for tname, cols in TABLE_FIELDS.items():
@@ -246,10 +238,85 @@ def validate(data):
 
 def render_scope(data, html=False):
     """从同一结构化记录生成尺度与逐父浪覆盖表。"""
+    if html:
+        return render_web_premise(data) + "\n" + "\n".join(
+            render_web_scheme(data, scheme["name"]) for scheme in data["analysis_scope"]["schemes"])
     premise, coverage = scope_tables(data["analysis_scope"])
-    renderer = render_html_table if html else render_md_table
+    renderer = render_md_table
     return renderer(["项", "内容"], premise) + "\n\n" + renderer(
+        ["方案", "浪路径", "定位状态", "依据", "缺证", "撤销条件"], position_tables(data["analysis_scope"])) + "\n\n" + renderer(
         ["方案", "父浪", "候选起止点", "观察区间", "摆动确认", "完成声明", "细分状态", "扫描事实", "依据与补证"], coverage)
+
+
+def render_web_premise(data):
+    """网页只展示用户需要的四项前提；完整检查留在Markdown。"""
+    source = {row["项"]: row["内容"] for row in data["tables"]["分析前提"]}
+    dow = next((source[key] for key in ("道氏", "道氏前提", "道氏状态") if key in source), "未提供道氏判断")
+    colors = "第一层白、第二层青、第三层橙" + ("、第四层亮黄绿" if data["细分深度"] == 4 else "")
+    return render_html_table(["项", "内容"], [
+        {"项": "细分深度", "内容": "%d层" % data["细分深度"]},
+        {"项": "观察截止", "内容": data["analysis_scope"]["data_end"]},
+        {"项": "道氏", "内容": dow},
+        {"项": "图例", "内容": colors + "；实线为方案采用的历史段，虚线为未完成段。实线不代表浪型或归属已确认。"},
+    ])
+
+
+def web_wave_pattern(wave):
+    """有内部组时采用其浪型；未定细型仅列该方案要求的候选类型。"""
+    labels = {"impulse": "推动浪", "diagonal": "楔形", "zigzag": "锯齿调整", "flat": "平台调整",
+              "triangle": "三角形调整", "double_combination": "双重组合调整", "triple_combination": "三重组合调整"}
+    pattern = wave.get("pattern", "unknown")
+    label = labels.get(pattern)
+    if label is None:
+        parent_pattern = wave.get("component_pattern")
+        component = wave["path"].rsplit("-", 1)[-1]
+        if parent_pattern == "impulse":
+            label = "推动" if component in ("1", "3", "5") else "修正"
+        elif parent_pattern == "zigzag":
+            label = "推动" if component in ("A", "C") else "修正"
+        elif parent_pattern == "flat":
+            label = "推动" if component == "C" else "修正"
+        elif parent_pattern in ("triangle", "double_combination", "triple_combination"):
+            label = "修正"
+        else:
+            return "未定"
+        label += "，细型未定"
+    if wave["completion_status"] != "confirmed_complete":
+        label += "（候选）"
+    return label
+
+
+def render_web_scheme(data, name):
+    """网页方案表仅保留浪号、起止点、浪型与是否细分，按父子树排序。"""
+    scheme = next((scheme for scheme in data["analysis_scope"]["schemes"] if scheme["name"] == name), None)
+    if scheme is None:
+        return "<p>不适用（单方案防御）</p>"
+    children = {}
+    for wave in scheme["waves"]:
+        parent = wave["path"].rsplit("-", 1)[0] if "-" in wave["path"] else ""
+        children.setdefault(parent, []).append(wave)
+    all_children = {}
+    for wave in scheme["waves"] + scheme.get("extra_checks", []):
+        if "-" in wave["path"]:
+            all_children.setdefault(wave["path"].rsplit("-", 1)[0], []).append(wave)
+    rows = []
+
+    def append_group(parent):
+        for wave in sorted(children.get(parent, []), key=lambda w: w["start"]):
+            end = "%s / %g" % (wave["end"], wave["end_price"])
+            if not wave["completed"]:
+                end = "观察截至" + end + "（未完成）"
+            registered = sorted(all_children.get(wave["path"], []), key=lambda w: w["start"])
+            full_span = (registered and registered[0]["start"] == wave["start"]
+                         and registered[-1]["end"] == wave["end"] and all(w["completed"] for w in registered))
+            rows.append({"浪": wave["path"],
+                         "起止点": "%s / %g → %s" % (wave["start"], wave["start_price"], end),
+                         "浪型": web_wave_pattern(wave),
+                         "是否细分": ("是" if full_span else "部分") if registered else "否"})
+            append_group(wave["path"])
+
+    append_group("")
+    return render_html_table(["浪", "起止点", "浪型", "是否细分"], rows)
 
 
 def render_html_table(cols, rows):
@@ -282,6 +349,9 @@ def render_jianming(jm, scope=None):
         child_pts = endpoint_chain([w for w in scheme["waves"]
                                    if "-" in w["path"] and w["path"].rsplit("-", 1)[0] == scheme["current_parent"]])
         observation = "；行情观察截至" + scope["data_end"]
+        if scheme.get("current_path"):
+            current = next(w for w in scheme["waves"] + scheme.get("extra_checks", []) if w["path"] == scheme["current_path"])
+            child_pts = endpoint_chain([current]) + "；上级前提：" + current["parent_identity"]["basis"]
     rating = str(jm["neely得分"]).strip()
     if rating in {"1", "2", "3"}:
         rating = "+" + rating

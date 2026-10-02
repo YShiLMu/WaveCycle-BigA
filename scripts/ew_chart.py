@@ -58,7 +58,7 @@ THEMES = {
     "dark": {
         "fig": "#0e1117", "ax": "#0e1117", "grid": "#2b3038",
         "text": "#d7dae0", "tick": "#aab0bb", "up": "#ff5b5b",
-        "down": "#3fb6a8", "path": "#f5f5f5", "path2": "#4dd0e1",
+        "down": "#3fb6a8", "path": "#f5f5f5", "path2": "#4dd0e1", "path4": "#B8F000",
         "channel": "#4dd0e1", "frame": "#3a4149", "note": "#b8c0cc",
         "label_fc": "#1a2029", "ref_hi": "#4fc3f7", "resist": "#81d4fa",
         "invalid": "#ff7043", "current": "#66bb6a", "fib": "#ffb74d",
@@ -67,7 +67,7 @@ THEMES = {
     "light": {
         "fig": "#ffffff", "ax": "#ffffff", "grid": "#dddddd",
         "text": "#111111", "tick": "#555555", "up": "#d32f2f",
-        "down": "#1e88e5", "path": "#333333", "path2": "#1565c0",
+        "down": "#1e88e5", "path": "#333333", "path2": "#1565c0", "path4": "#4D7C0F",
         "channel": "#00897b", "frame": "#888888", "note": "#555555",
         "label_fc": "#ffffff", "ref_hi": "#1565c0", "resist": "#1565c0",
         "invalid": "#d32f2f", "current": "#2e7d32", "fib": "#ffb74d",
@@ -155,8 +155,8 @@ def _bottom_layout(paths, waves, pivots, levels, invalids, current_price, channe
 
 
 def _level_color(lb, t):
-    """按标签层级取配色：1级白、2级青、3级橙（显眼）、4级红；层级越高越突出，与底部浪型区对应。"""
-    key = {1: "path", 2: "path2", 3: "fib", 4: "up"}.get(_label_level(lb), "path")
+    """按标签层级取配色：1级白、2级青、3级橙（显眼）、4级黄绿；深色主题用亮黄绿、浅色主题加深，与底部浪型区对应。"""
+    key = {1: "path", 2: "path2", 3: "fib", 4: "path4"}.get(_label_level(lb), "path")
     return t[key]
 
 
@@ -242,8 +242,9 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
     # 底部行距不压缩：先按输入（pivots/paths/waves/levels/invalids…）预估最多行数，
     # 行数多则按 _BOTTOM_ROW_IN/行 加高画布（_bottom_layout），文字永不叠行。
     fig_h, main_in, bottom_in, row_h, _brows = _bottom_layout(
-        paths, waves, pivots, levels, invalids, current_price, channels, fs,
-        sum(_label_level(w["path"]) <= 2 for w in pending or []))
+        paths, list(waves or []) + [(w["path"],) for w in pending or [] if _label_level(w["path"]) <= 2],
+        pivots, levels, invalids, current_price, channels, fs,
+        sum(w.get("legend", False) for w in pending or []) + (4 if pending else 0))
     fig = plt.figure(figsize=(18, fig_h))
     # 布局：主图跨全宽（只画线，不放任何文字）。
     #   下方 2 块：左 = 平行线注释（ax_legend）；右 = 浪型区（ax_waves，内部大浪左列+小浪右列）。
@@ -312,11 +313,15 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
     if channels:
         _draw_channels(ax, plot_df, base, channels, t, fs)
 
-    # 覆盖事实中的未完成段仅画灰虚线，止点只是已发生的观察点。
+    # 未完成段保持层级色及虚线；历史段实线不承担结构确认含义。
     for segment in pending or []:
         ax.plot([segment["start"] - base, segment["end"] - base],
                 [segment["start_price"], segment["end_price"]],
-                color=t["note"], linewidth=0.9, linestyle="--", alpha=0.8, zorder=5)
+                color=_level_color(segment["path"], t), linewidth=1.3 if _label_level(segment["path"]) == 1 else 0.8,
+                linestyle="--", alpha=0.8, zorder=5)
+        if _label_level(segment["path"]) <= 2:
+            sub_rows.append((segment["path"] + "（" + segment["status"] + "）",
+                             _fmt_price(segment["end_price"]), segment["end_date"], segment["end"] - base))
 
     # 2) 参考线：只画线，不放标签
     price_floor = plot_df["low"].min()
@@ -344,10 +349,13 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
         legend_lines.append((t["invalid"], "红色虚线", f"{label} {_fmt_price(price)}"))
     if current_price is not None:
         legend_lines.append((t["current"], "绿色实线", f"当前价 {_fmt_price(current_price)}"))
+    if pending:
+        for level, sample in ((1, "1"), (2, "1-1"), (3, "1-1-1"), (4, "1-1-1-1")):
+            legend_lines.append((_level_color(sample, t), "虚线", "第%d层：实线=已采用历史段；虚线=未完成" % level))
     for segment in pending or []:
-        if _label_level(segment["path"]) <= 2:
-            legend_lines.append((t["note"], "灰色虚线", "%s进行中：暂定止点%s/%s；观察截至%s" %
-                                 (segment["path"], _fmt_price(segment["end_price"]),
+        if segment.get("legend", False):
+            legend_lines.append((_level_color(segment["path"], t), "虚线", "%s%s：观察点%s/%s；观察截至%s" %
+                                 (segment["path"], segment["status"], _fmt_price(segment["end_price"]),
                                   segment["end_date"], segment["observation_end"])))
     if channels:
         legend_lines.append((t["channel"], "青色实线", "平行通道：上轨=连[1][3]高点"))
@@ -893,8 +901,8 @@ def main():
                         "可多次传入叠加不同层级子浪（如 1-1、1-1-1），"
                         "层级颜色由框标的连字符段数区分（1→白、1-1→青、1-1-1→橙）。"
                         "正式图第一层与子浪均用绑定scope的 --path；进行中段由scope自动画虚线；"
-                        "默认 2 层=每个大级别浪都叠第 2 层子浪，"
-                        "用户明确要 3 层才叠第 3 层（09 默认口径表 D37）。"
+                        "默认展示 3 层，用户要求时展示 4 层（09 默认口径表 D37）；"
+                        "历史采用段用实线；启动候选与进行中段由 scope 画虚线，线型不确认浪级身份。"
                         "例：--path \"1-1@339,1-2@465\" --path \"1-1-1@360,1-1-2@400\"")
     p.add_argument("--channel", nargs="*", action="append", type=parse_channel_arg, default=[],
                    help="推动浪平行通道：1浪高点索引:3浪高点索引:2浪低点索引。"

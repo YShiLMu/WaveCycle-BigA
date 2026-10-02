@@ -21,7 +21,7 @@ from ohlc_io import load_ohlc
 from rule_check import evaluate
 from swings import fractal_pivots
 from target_calc import calculate
-from analysis_scope import from_facts
+from analysis_scope import from_facts, validate_completion, is_solid_segment
 
 LABELS = {
     "impulse": ["1", "2", "3", "4", "5"],
@@ -72,9 +72,9 @@ def analyze(csv_path, data):
     as_of = data.get("as_of")
     if not isinstance(as_of, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", as_of):
         raise ValueError("as_of须显式提供YYYY-MM-DD信息截止日")
-    depth = data.get("depth", 2)
-    if type(depth) is not int or depth not in (2, 3):
-        raise ValueError("depth须为2或3；仅用于检查既定细分覆盖，不替代用户深度确认")
+    depth = data.get("depth", 3)
+    if type(depth) is not int or depth not in (2, 3, 4):
+        raise ValueError("depth须为3或4；2仅兼容旧局部机械输入，不能进入新报告")
     df = load_ohlc(csv_path, end=as_of)
     for column in ("open", "high", "low", "close", "volume"):
         if column in df:
@@ -97,6 +97,8 @@ def analyze(csv_path, data):
         if not isinstance(scheme.get("degree"), str) or not scheme["degree"].strip():
             raise ValueError("每个候选须声明degree")
         result["schemes"].append(analyze_scheme(df, scheme, depth))
+    result["inspection_depth"] = max(w["path"].count("-") + 1
+                                      for s in result["schemes"] for w in s["waves"])
     if "analysis_scope" in data:
         result["analysis_scope"] = from_facts(data["analysis_scope"], result, df.date.iloc[0].strftime("%Y-%m-%d"))
     return result
@@ -118,6 +120,8 @@ def analyze_scheme(df, scheme, depth):
 
     for group in sorted(groups, key=lambda g: (g["path"].count("-") + 1 if g["path"] else 0, g["path"])):
         path = group["path"]
+        if path and path.count("-") + 1 >= 4:
+            raise ValueError("当前检查最多四层；父组路径最多三层")
         pattern = group.get("pattern")
         if pattern not in LABELS and pattern != "unknown":
             raise ValueError("未知pattern：%r" % pattern)
@@ -146,12 +150,27 @@ def analyze_scheme(df, scheme, depth):
                 raise ValueError("每个浪终点须显式声明completed布尔值")
             row = df.iloc[index]
             position = pivot_keys.get((index, kind))
-            confirmed = position is not None and any(
-                int(j) > index and other_kind != kind for j, _, other_kind in seq[position + 1:])
+            opposite = next(({"index": int(j), "date": df.date.iloc[int(j)].strftime("%Y-%m-%d"),
+                              "kind": other_kind} for j, _, other_kind in seq[position + 1:]
+                             if int(j) > index and other_kind != kind), None) if position is not None else None
+            confirmed = opposite is not None
+            completed = p.get("completed", False)
+            status = p.get("completion_status", "completion_candidate" if completed else "in_progress")
+            unknown = {"status": "pending", "basis": "未提供独立组成／父级证据，不能升级确认完成"}
             resolved.append({"label": p["label"], "index": index, "kind": kind,
                              "price": float(row.high if kind == "H" else row.low),
                              "date": row.date.strftime("%Y-%m-%d"), "pivot": position is not None,
-                             "confirmed": confirmed, "completed": p.get("completed", False)})
+                             "confirmed": confirmed, "completed": completed,
+                             "completion_status": status,
+                             "completion_basis": p.get("completion_basis", "给定候选阶段，结构尚需独立核验"),
+                             "internal_structure": p.get("internal_structure", dict(unknown)),
+                             "parent_identity": p.get("parent_identity", dict(unknown)),
+                             "depends_on": p.get("depends_on"),
+                             "explicit_status": "completion_status" in p,
+                             "pivot_confirmation": {"identified": position is not None, "window": k,
+                                                    "confirmed": confirmed, "opposite": opposite}})
+            if n:
+                validate_completion(resolved[-1])
         if resolved[0]["label"] != "0":
             raise ValueError("组起点label须为0（起点占位，不是新增浪）")
         labels = [p["label"] for p in resolved[1:]]
@@ -182,6 +201,10 @@ def analyze_scheme(df, scheme, depth):
         segments = []
         for a, b in zip(resolved, resolved[1:]):
             full_path = path + "-" + b["label"] if path else b["label"]
+            if b["completion_status"] == "start_candidate":
+                previous_path = path + "-" + a["label"] if path else a["label"]
+                if b["depends_on"]["path"] != previous_path or not a["completed"]:
+                    raise ValueError("启动候选须依赖同组前一个候选结束浪")
             if full_path in facts:
                 raise ValueError("浪路径重复：%s" % full_path)
             span = b["index"] - a["index"]
@@ -194,15 +217,17 @@ def analyze_scheme(df, scheme, depth):
                 valid_chain = False
             for endpoint, role in ((a, "起点"), (b, "终点")):
                 if not endpoint["pivot"]:
-                    status = "违反" if b["completed"] else "待核对"
+                    strict = b["completion_status"] == "confirmed_complete" or (b["completed"] and not b["explicit_status"])
+                    status = "违反" if strict else "待核对"
                     record(full_path, "R20端点来源", status, role + "未出现在本组k=%d摆动序列；先复核窗口与选点" % k)
-            if b["completed"] and not b["confirmed"]:
+            if b["completed"] and not b["confirmed"] and not b["explicit_status"]:
                 record(full_path, "R34/D39", "违反", "宣称已完成终点，但截止日内尚无后续反向摆动确认")
             elif not b["completed"]:
                 record(full_path, "形成阶段", "待核对", "未完成浪；比率仅为条件测量")
             facts[full_path] = {"path": full_path, "parent": path, "start": a, "end": b,
                                 "length": length, "bars": span, "completed": b["completed"],
                                 "k": k, "group_pattern": pattern,
+                                **{key: b[key] for key in ("completion_status", "completion_basis", "internal_structure", "parent_identity", "depends_on")},
                                 "ratio_to_previous": length / segments[-1]["length"] if segments and segments[-1]["length"] else None}
             if span > 0:
                 fact = facts[full_path]
@@ -231,16 +256,23 @@ def analyze_scheme(df, scheme, depth):
                 record(path, r["rule"], r["status"], r["basis"])
         elif pattern == "impulse":
             record(path, "数值规则", "待核对", "至少需正确的1–3端点序列；修正端点契约后再核")
-        # 参数仅供复用；只导出已确认且明确声明完成的前缀，未完成段另按R34绘制。
-        prefix = []
-        for i, point in enumerate(resolved):
-            if not point["pivot"] or (i and not (point["confirmed"] and point["completed"])):
-                break
-            lb = path + "-" + point["label"] if path else point["label"]
-            lb = "-".join("X" if part == "X2" else part for part in lb.split("-"))
-            prefix.append("%s@%d:%s" % (lb, point["index"], "peak" if point["kind"] == "H" else "trough"))
-        if len(prefix) >= 2 and valid_chain:
-            chart_paths.append({"parent": path, "path": ",".join(prefix), "start": resolved[0]["index"]})
+        # 实线复用已采用历史段；严格完成确认与图形表达分别处理。
+        run = []
+        run_start = None
+        for i, point in enumerate(resolved[1:], 1):
+            solid = valid_chain and is_solid_segment(point)
+            if solid:
+                if not run:
+                    start = resolved[i - 1]
+                    run_start = start["index"]
+                    zero = path + "-0" if path else "0"
+                    run.append("%s@%d:%s" % (zero, run_start, "peak" if start["kind"] == "H" else "trough"))
+                lb = path + "-" + point["label"] if path else point["label"]
+                lb = "-".join("X" if part == "X2" else part for part in lb.split("-"))
+                run.append("%s@%d:%s" % (lb, point["index"], "peak" if point["kind"] == "H" else "trough"))
+            if run and (not solid or i == len(resolved) - 1):
+                chart_paths.append({"parent": path, "path": ",".join(run), "start": run_start})
+                run = []
     for path, fact in facts.items():
         if path.count("-") + 1 < depth and path not in paths:
             record(path, "细分覆盖", "待核对", "未登记下一层内部结构；不得据机械检查宣称完整数浪通过")
@@ -259,6 +291,7 @@ def analyze_scheme(df, scheme, depth):
                       status="条件演算；目标用途、合法范围及共振另核")
         targets.append(target)
     return {"name": scheme["name"], "degree": scheme["degree"], "waves": list(facts.values()),
+            "group_patterns": {g["path"]: g["pattern"] for g in groups},
             "checks": checks, "targets": targets, "chart_paths": chart_paths}
 
 

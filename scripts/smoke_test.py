@@ -315,15 +315,18 @@ def main(argv=None):
     print("== 7. gen_report_web.py / gen_report_md.py（stdin data.json 渲染网页与 md）==")
     data = {
         "标的名称": "冒烟", "标的代码": "000000", "时间戳": "20260101_1200",
-        "报告模式": "标准", "细分深度": 2, "细分深度来源": "用户确认-2层",
+        "报告模式": "标准", "细分深度": 3, "细分深度来源": "默认-3层",
         "analysis_scope": {
-            "version": 2, "profile": "daily-year-month-day", "data_start": "2024-01-01",
+            "version": 3, "delivery_depth": 3, "inspection_depth": 1, "profile": "daily-year-month-day", "data_start": "2024-01-01",
             "data_end": "2026-01-01", "history_review": "合成长期框架；不代表真实市场结论",
             "schemes": [{"name": plan, "framework_start": "2024-01-01", "current_parent": "1",
                          "basis": "合成框架", "review_condition": "补核内部子浪",
                          "waves": [{"path": "1", "start": "2024-01-01", "end": "2026-01-01",
                                     "state": "unresolved", "completed": False, "confirmed": False,
                                     "start_price": 100., "end_price": 160.,
+                                    "completion_status": "in_progress", "completion_basis": "合成阶段，未核验完成",
+                                    "internal_structure": {"status": "pending", "basis": "合成输入缺内部行情"},
+                                    "parent_identity": {"status": "pending", "basis": "合成框架待核验"},
                                     "inspection": {"start": "2024-01-01", "end": "2026-01-01",
                                                    "extrema": {"high": {"date": "2026-01-01", "price": 160.},
                                                                "low": {"date": "2024-01-01", "price": 100.}},
@@ -342,7 +345,7 @@ def main(argv=None):
             "数据来源": "合成数据", "生成时间": "2026-01-01 12:00",
         },
         "tables": {
-            "分析前提": [{"项": "细分深度来源", "内容": "用户确认-2层"},
+            "分析前提": [{"项": "细分深度来源", "内容": "默认-3层"},
                         {"项": "级别", "内容": "日线级别"}],
             "主方案数浪": [{"浪": "1", "端点": "100/2024-01-01 → 160/2024-02-01", "结构": "Impulse", "说明": "测试"}],
             "neely参考": [{"脚本": "结构阶梯", "输出": "通过", "意义": "测试"}],
@@ -357,6 +360,19 @@ def main(argv=None):
             "neely得分": 1, "neely强度": "中等", "结论": "偏多",
         },
     }
+    four_data = json.loads(json.dumps(data, ensure_ascii=False))
+    four_data["细分深度"] = 4
+    four_data["细分深度来源"] = "用户确认-4层"
+    four_data["analysis_scope"]["delivery_depth"] = 4
+    four_data["tables"]["分析前提"][0]["内容"] = "用户确认-4层"
+    for script in ("gen_report_md.py", "gen_report_web.py"):
+        code, out, err = run([sys.executable, os.path.join(HERE, script), "--data", "-"],
+                             stdin_text=json.dumps(four_data, ensure_ascii=False))
+        visible = out.split("<!-- REPORT-STATE-v1:")[0]
+        content_ok = ("交付4层" in visible and "实际端点登记到1层" in visible) if script == "gen_report_md.py" else (
+            "4层" in visible and "是否细分" in visible and "扫描事实" not in visible)
+        check("四层报告按MD完整／HTML精简展示：" + script,
+              code == 0 and content_ok, err[-200:])
     payload = json.dumps(data, ensure_ascii=False)
     # 负例：缺"细分深度来源"应被校验拦截（06 R35/D37，未确认深度不得出报告）
     bad_payload = json.dumps({k: v for k, v in data.items() if k != "细分深度来源"},

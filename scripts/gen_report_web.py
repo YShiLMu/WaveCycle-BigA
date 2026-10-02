@@ -48,8 +48,8 @@ def main():
     with open(tpl_path, encoding="utf-8") as f:
         html = f.read()
     rc.check_invalidation_anchor(html, "网页报告模板 %s" % tpl_path)
-    if "{{分析尺度与覆盖}}" not in html:
-        fail("网页报告模板缺少分析尺度与覆盖；请从源文件重新构建并同步安装")
+    if any("{{%s}}" % key not in html for key in ("网页分析前提", "网页主方案", "网页替代方案")):
+        fail("网页报告模板缺少精简前提或方案表；请从源文件重新构建并同步安装")
 
     # 1) 表格（网页 HTML 表格，先于文本）
     for tname, cols in rc.TABLE_FIELDS.items():
@@ -59,7 +59,9 @@ def main():
     mapping = dict(fields)
     mapping.update({"标的名称": name, "标的代码": code,
                     "简明分析说明": rc.render_jianming(jm, data["analysis_scope"]).replace("\n", "<br>\n"),
-                    "分析尺度与覆盖": rc.render_scope(data, html=True)})
+                    "网页分析前提": rc.render_web_premise(data),
+                    "网页主方案": rc.render_web_scheme(data, "主方案"),
+                    "网页替代方案": rc.render_web_scheme(data, "替代方案")})
     html = rc.substitute(html, mapping)
 
     if data["报告模式"] == "单方案防御":
