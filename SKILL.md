@@ -13,17 +13,17 @@ description: 观复（WaveCycle）· 艾略特波浪数浪叠加道氏/江恩/�
 
 **正式交付必填analysis_scope**：候选JSON登记框架元数据与每个缺证父浪gaps，wave_facts生成完整覆盖对象，再原样并入报告data.json；两个生成器强制检查同一第一层框架与覆盖对象；Markdown渲染完整检查表，HTML只渲染精简前提与方案表。第一层跨度不足365自然日须具体说明原因和补证，不得仅写“有限历史”；该阈值仅为披露，不是理论Rule。正式图 `--out-auto` 必须传 `--scope-file <报告data.json>`，--start绑定framework_start，不允许--last裁掉长期框架；所有已采用历史段的层级端点（含完成候选）须画出。格式按需读取 `references/tool_discipline.md` 第8节；其他尺度仅用户明确要求时用user-defined。
 
-- 分析 A 股：先调用 `a-stock-data` skill 获取指定级别与时间范围的行情（日 K/周 K/月 K 均可），再开始数浪；其他市场：以用户提供的数据或图表为准。
-- 标的代码核验：取数前必须锁定代码；用户仅提供名称（未给代码）时，先请用户补充代码再取数；名称有歧义（一名称对应多代码）时不得自行猜测，由用户确认（见 `references/data.md`）。
+- 用户已提供 A 股 CSV 或图表时，以其指定的数据、截止时间和复权口径为准；仅在用户要求刷新、补全或比对时调用 `a-stock-data`，并遵循宿主的 skill 授权规则。无用户指定数据的 A 股分析可调用 `a-stock-data` 获取指定级别与时间范围的行情（日 K/周 K/月 K 均可）；其他市场以用户提供的数据或图表为准。
+- 标的代码核验：取数前必须锁定代码；用户仅提供名称（未给代码）时，先请用户补充代码再取数；名称有歧义（一名称对应多代码）时不得自行猜测，由用户确认。调用端点前先按 `references/data.md` 归一代码：不传 `.SH/.SZ/.BJ` 后缀；`000001` 等交易所歧义代码必须保留或要求显式 `sh`/`sz`/`bj` 前缀。
 - 取数协议唯一权威：按 `references/data.md` 执行"函数映射 → 参数默认值 → 统一 CSV 输出 → 降级链"；**协议源文件见 `references/data.md`**，`references/data.md` 由其转换生成（仅编号/路径口径不同），修改必须改源。
-- 复权口径（默认目标与可执行路径）：长周期/大级别默认目标后复权（hfq），短中期可前复权（qfq）；mootdx `bars()` 为不复权原始价，无除权除息数据时**不得自行计算 hfq**，自动降级为腾讯 fqkline 前复权并披露 qfq，禁止声称 hfq；报告【1 分析前提】数据基准必须披露复权方式 + 数据源 + 截至时间三项（见 references/data.md 第 2 节）。
+- 复权口径（默认目标与可执行路径）：长周期/大级别默认目标后复权（hfq），短中期可前复权（qfq）；mootdx `bars()` 为不复权原始价。仅当 a-stock-data §1.4 的 `sina_adjust_factor`／`apply_adjust` 因子完整、匹配且应用结果通过自检时使用 hfq，否则自动降级为腾讯 fqkline 前复权并披露 qfq，禁止自行推算因子或声称 hfq；报告【1 分析前提】数据基准必须披露复权方式 + 数据源 + 截至时间三项（见 references/data.md 第 2 节）。
 - 无论数据来源，先提取**极端价位（含影线）序列**：所有摆动点、失效价位、边界与比率计算一律以含影线的最高/最低价为准，不以收盘价替代（见 references/rules.md R20）。
 - 数据不足或无法确认内部子浪时，如实说明并保守处理（见 references/guidelines.md G12），不得编造后续行情。
 - **环境自检**：首次使用或更换机器后，运行 `scripts/smoke_test.py` 验证 pandas / matplotlib / 中文字体可用且三个脚本（key_levels / ew_chart / embed_report_images）主流程跑通；自检失败先修环境，再出图与内嵌。
 
 ### 1.1 与 a-stock-data 的交接规则（Handoff Rules）
 
-两 skill 同时触发时，**只读** a-stock-data 的「端点路由速查」与「K 线相关章节」（§1.1 `tdx_client()`、§1.2 `tencent_quote()`、§1.3 `baidu_kline_with_ma()`、备用源 K 线行），**禁止整篇加载其 SKILL.md（3000+ 行）**；它只管取数与防封，取数口径与全部分析规则（规则/校验/概率/报告/复权/自检）以本 skill 为准，协议见 `references/data.md`，返回的原始数据不构成任何数浪结论。取数后先按 workflow 第 1 步数据自检，不通过即退回重取或降级标注，禁止带病数浪。
+两 skill 同时触发时，按需只读 a-stock-data 的「端点路由速查」与 K 线相关章节（§1.1 `tdx_client()`、§1.2 `tencent_quote()`、§1.3 `baidu_kline_with_ma()`、备用源 K 线行）；仅在需要 hfq 时再读 §1.4 `sina_adjust_factor`／`apply_adjust`，禁止整篇加载其 SKILL.md。它只管取数与防封，取数口径与全部分析规则（规则/校验/概率/报告/复权/自检）以本 skill 为准，协议见 `references/data.md`，返回的原始数据不构成任何数浪结论。取数后先按 workflow 第 1 步数据自检，不通过即退回重取或降级标注，禁止带病数浪。
 
 ## 2. 核心约定（必须遵守）
 
@@ -37,7 +37,7 @@ description: 观复（WaveCycle）· 艾略特波浪数浪叠加道氏/江恩/�
 
 ### 第 1 步 分析市场
 
-读取数据 → **分析前提三件套必跑 `scripts/preflight.py` 单入口**（`--csv/--source/--fq` 一次产出：数据自检表+四要素（D28，data_check 不通过即终止禁止带病数浪）→ 摆动点/行索引+道氏状态读数（D30，3 点判 2 点定+DO4 事实，翻转裁决仍按 D22/DO5 由模型）→ 三类锚点（D27/R32）；也可单独跑 `scripts/data_check.py`、`scripts/swings.py --dow`、`scripts/key_levels.py`）→ 判定趋势方向（**道氏口径先行**：按**高一层级指数**（个股→大盘+板块、板块→大盘，见 `references/dow.md`）的高低点结构输出"道氏趋势状态"（牛市/熊市/震荡）+ 指数互证核对，再与波浪结构判定对照）→ 选择并声明分析级别 → 提取技术分析锚点（前高前低、跳空缺口、多日未破压力/支撑位三类由脚本产出；趋势线由模型基于脚本摆动点连线并披露端点——作为数浪与失效价位的锚，见 `references/rules.md` R32）（见 `references/workflow.md` 第 1 步）。摆动点与 CSV 行索引用 `scripts/swings.py` 产出（分形 Pivot、`--weekly` 周线聚合供道氏判定、`--fib` 斐波比率、`--chart-args` 输出 ew_chart 可粘贴的 `--pivot` 参数串），道氏周线判定与 ew_chart 索引定位均以它为准，禁止手写临时脚本重复计算。道氏状态只做数浪先验倾斜，不否决任何数法。
+读取数据 → **分析前提三件套必跑 `scripts/preflight.py` 单入口**（`--csv <路径> --metadata <同stem.metadata.json> --require-metadata` 一次产出：数据自检表+四要素（D28，data_check 不通过即终止禁止带病数浪）→ 摆动点/行索引+道氏状态读数（D30，3 点判 2 点定+DO4 事实，翻转裁决仍按 D22/DO5 由模型）→ 三类锚点（D27/R32）；也可单独跑 `scripts/data_check.py`、`scripts/swings.py --dow`、`scripts/key_levels.py`）。元信息须含 source、fq、as_of、timezone、csv_sha256；`--source`／`--fq` 与元信息冲突会阻断，旧式仅声明不作为正式数据基准。→ 判定趋势方向（**道氏口径先行**：按**高一层级指数**（个股→大盘+板块、板块→大盘，见 `references/dow.md`）的高低点结构输出"道氏趋势状态"（牛市/熊市/震荡）+ 指数互证核对，再与波浪结构判定对照）→ 选择并声明分析级别 → 提取技术分析锚点（前高前低、跳空缺口、多日未破压力/支撑位三类由脚本产出；趋势线由模型基于脚本摆动点连线并披露端点——作为数浪与失效价位的锚，见 `references/rules.md` R32）（见 `references/workflow.md` 第 1 步）。摆动点与 CSV 行索引用 `scripts/swings.py` 产出（分形 Pivot、`--weekly` 周线聚合供道氏判定、`--fib` 斐波比率、`--chart-args` 输出 ew_chart 可粘贴的 `--pivot` 参数串），道氏周线判定与 ew_chart 索引定位均以它为准，禁止手写临时脚本重复计算。道氏状态只做数浪先验倾斜，不否决任何数法。
 
 ### 第 2 步 数浪
 
@@ -64,7 +64,7 @@ description: 观复（WaveCycle）· 艾略特波浪数浪叠加道氏/江恩/�
 
 ### 第 5 步 更新数浪
 
-失效优先 → **失效触发判定必跑 `scripts/invalidation_check.py`**（把上一份报告第 5 章失效价位清单与最新 CSV 交给它，输出是否触发/首次触及日/确认窗口状态，禁止重读 CSV 人工比价，见 `references/defaults.md` D29）→ 触发条件判定（H1–H4 硬性触发 / S1–S3 软性触发）→ 主备方案状态维护 → 概率重排 → 写入变更日志（见 `references/workflow.md` 第 5 步）。
+失效优先 → **失效触发判定必跑 `scripts/invalidation_check.py`**（把上一份报告第 5 章失效价位清单与最新 CSV 交给它，输出是否触发/首次触及日/确认窗口状态，禁止重读 CSV 人工比价，见 `references/defaults.md` D29）→ 触发条件判定（H1/H2/H4 硬性触发 / S1–S4 软性触发）→ 主备方案状态维护 → 概率重排 → 写入变更日志（见 `references/workflow.md` 第 5 步）。
 
 ### 最小可执行示例（假设数据）
 

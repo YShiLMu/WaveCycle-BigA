@@ -8,7 +8,7 @@
   3. 上证周线聚合（道氏"主要趋势"口径用周级别高低点），周线摆动回填到周内极端价
      所在交易日的日线索引，参数串可直接用于日线图。
 
-另附 --fib：区间回撤位（自高点）与延伸目标（自低点），消除手算比率。
+另附 --fib：按起点到终点的方向计算回撤与延伸，消除手算比率。
 
 用法：
   python swings.py --csv data/881133.csv --k 5 --start 2021-01-01
@@ -229,9 +229,15 @@ def dow_state(dow_pivs, rows, has_volume):
                 elif bar[4] < prev_bar[4]:
                     dn.append(bar[5])
             if up and dn:
-                ratio = (sum(up) / len(up)) / (sum(dn) / len(dn))
-                lines.append("成交量：近 20 根上涨日均量/下跌日均量 = %.2f（%s）——与道氏状态是否互证由模型判定（DO4）"
-                             % (ratio, "涨放量跌缩量" if ratio > 1 else "涨缩量跌放量"))
+                up_mean, down_mean = sum(up) / len(up), sum(dn) / len(dn)
+                if down_mean == 0:
+                    lines.append("成交量：上涨日均量 %.3f；下跌日均量 %.3f；比值不可定义（分母为零）——不能据此确认量价互证（DO4）"
+                                 % (up_mean, down_mean))
+                else:
+                    ratio = up_mean / down_mean
+                    label = "涨放量跌缩量" if ratio > 1 else "涨缩量跌放量" if ratio < 1 else "涨跌均量相同"
+                    lines.append("成交量：上涨日均量 %.3f；下跌日均量 %.3f；近 20 根上涨日均量/下跌日均量 = %.2f（%s）——与道氏状态是否互证由模型判定（DO4）"
+                                 % (up_mean, down_mean, ratio, label))
             else:
                 lines.append("成交量：近 20 根单边涨或跌，比值不可比——模型披露")
         else:
@@ -241,7 +247,25 @@ def dow_state(dow_pivs, rows, has_volume):
     return state, lines
 
 
-def main():
+def fib_values(text):
+    """复用目标计算器，输入顺序是基准方向，不能排序端点。"""
+    from target_calc import calculate
+    parts = text.split(":")
+    if len(parts) not in (2, 3):
+        raise ValueError("--fib 须为 起点:终点[:锚点]，恰好两段或三段")
+    try:
+        values = [float(part) for part in parts]
+    except ValueError as exc:
+        raise ValueError("--fib 各段须为有限数字") from exc
+    start, end = values[:2]
+    anchor = values[2] if len(values) == 3 else start
+    retracement = calculate(start, end, "retracement", RETRACES)
+    projection = calculate(start, end, "projection", EXTENSIONS, anchor,
+                           "up" if end > start else "down")
+    return retracement, projection
+
+
+def main(argv=None):
     p = argparse.ArgumentParser(
         description="主要摆动点提取（分形 Pivot + 行索引 + 周线聚合 + 斐波比率）")
     p.add_argument("--csv", required=True, help="OHLC CSV（date,open,high,low,close[,volume]）")
@@ -265,10 +289,16 @@ def main():
                    help="输出道氏趋势状态读数（D30：最近 3 高/3 低、D11 显著筛、"
                         "3点判2点定 + 第3点一致性校验 + DO4 成交量事实）；"
                         "翻转裁决仍按 D22/DO5 由模型执行")
-    p.add_argument("--fib", default=None, metavar="低:高[:锚]",
+    p.add_argument("--fib", default=None, metavar="起点:终点[:锚点]",
                    help="区间回撤/延伸：--fib \"3148.56:5666.35:4234.12\"；"
-                        "锚省略时延伸自低点；上涨/下跌区间自动识别")
-    args = p.parse_args()
+                        "按起点到终点顺序识别上涨/下跌；锚省略时延伸自起点")
+    args = p.parse_args(argv)
+    fib = None
+    if args.fib:
+        try:
+            fib = fib_values(args.fib)
+        except ValueError as exc:
+            p.error(str(exc))
 
     rows, has_volume = load_ohlc(args.csv)
     rows = [(normalize_date(r[0]), *r[1:]) for r in rows]
@@ -371,20 +401,16 @@ def main():
         print("  起画点(ew_chart --start): %s (idx %s)" % (seq[0][2], seq[0][1]))
         print("  （一条 --path = 一个连续浪链；不同大级别/层级浪请拆分多条 --path 传）")
 
-    if args.fib:
-        parts = [float(x) for x in args.fib.split(":")]
-        if len(parts) < 2:
-            raise SystemExit("[错误] --fib 需要 低:高[:锚] 三个段中的至少两段")
-        lo, hi = (parts[0], parts[1]) if parts[0] <= parts[1] else (parts[1], parts[0])
-        anchor = parts[2] if len(parts) > 2 else lo
-        rng = hi - lo
-        print("\n== 斐波那契（区间 %.3f–%.3f，宽 %.3f；延伸锚 %.3f）==" % (lo, hi, rng, anchor))
-        print("  回撤位（自高点向低点）：")
-        for ratio in RETRACES:
-            print("    %.1f%% → %.3f" % (ratio * 100, hi - rng * ratio))
-        print("  延伸位（自锚点向上投影）：")
-        for ratio in EXTENSIONS:
-            print("    %.3f×区间 → %.3f" % (ratio, anchor + rng * ratio))
+    if fib:
+        retracement, projection = fib
+        print("\n== 斐波那契（起点 %.3f→终点 %.3f，宽 %.3f；延伸锚 %.3f）=="
+              % (retracement["start"], retracement["end"], retracement["length"], projection["origin"]))
+        print("  回撤位（自终点%s）：" % ("向上" if retracement["direction"] == "up" else "向下"))
+        for value in retracement["values"]:
+            print("    %.1f%% → %.3f" % (value["ratio"] * 100, value["price"]))
+        print("  延伸位（自锚点%s投影）：" % ("向上" if projection["direction"] == "up" else "向下"))
+        for value in projection["values"]:
+            print("    %.3f×区间 → %.3f" % (value["ratio"], value["price"]))
 
 
 if __name__ == "__main__":

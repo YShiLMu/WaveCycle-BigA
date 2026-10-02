@@ -28,9 +28,70 @@ import pathlib
 import re
 import sys
 import io
+import hashlib
+from html.parser import HTMLParser
 from PIL import Image
 
 from naming import HTML_TOKENS, IMAGE_KEYS
+
+IMG_PATTERN = re.compile(r'''<img\b(?:[^>"']|"[^"]*"|'[^']*')*>''', re.IGNORECASE)
+MD_IMAGE_PATTERN = re.compile(r"!\[([^\]]*)\]\(([^)]*)\)")
+SRC_PATTERN = re.compile(r'''(?<![\w:-])src\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)''', re.IGNORECASE)
+
+
+class ImageAttributes(HTMLParser):
+    def __init__(self, tag):
+        super().__init__()
+        self.attributes = {}
+        self.feed(tag)
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "img":
+            keys = [key for key, _value in attrs]
+            if len(keys) != len(set(keys)):
+                raise SystemExit("[校验失败] 图片标签含重复属性")
+            self.attributes = dict(attrs)
+
+
+def image_key(label="", source="", scheme=""):
+    """按稳定方案标识或旧版 alt/文件名定位，冲突与无标识不猜测。"""
+    candidates = set()
+    for key, filename in IMAGE_KEYS:
+        if scheme in (key, key.replace("全景", "")) or label in (key, key + "图"):
+            candidates.add(key)
+        if source == HTML_TOKENS[key] or source.replace("\\", "/").split("/")[-1] == filename:
+            candidates.add(key)
+    if len(candidates) > 1:
+        raise SystemExit("[校验失败] 图片方案标识相互冲突")
+    return next(iter(candidates), None)
+
+
+def pano_images(text):
+    """取得所有全景图的标签、方案与来源，属性顺序不影响识别。"""
+    result = []
+    for match in IMG_PATTERN.finditer(text):
+        attributes = ImageAttributes(match.group()).attributes
+        if "pano-img" not in (attributes.get("class") or "").split():
+            continue
+        key = image_key(attributes.get("alt") or "", attributes.get("src") or "",
+                        attributes.get("data-scheme") or "")
+        if key is None:
+            raise SystemExit("[校验失败] 全景图缺少明确方案标识，无法安全重嵌")
+        result.append((match, key, attributes))
+    return result
+
+
+def md_images(text):
+    result = []
+    for match in MD_IMAGE_PATTERN.finditer(text):
+        label, source = match.groups()
+        if not (source.startswith("data:image/png;base64,") or source.lower().endswith(".png")):
+            continue
+        key = image_key(label, source)
+        if key is None:
+            raise SystemExit("[校验失败] Markdown 图片缺少明确方案标识，无法安全重嵌")
+        result.append((match, key, source))
+    return result
 
 
 def verify_png(payload):
@@ -74,22 +135,20 @@ def locate_assets(folder: pathlib.Path):
 
 def embed_md(md_path: pathlib.Path, images, keep_absolute: bool, write=True):
     text = md_path.read_text(encoding="utf-8")
-    for key, filename in IMAGE_KEYS:
-        pat = re.compile(r"(!\[[^\]]*\]\()([^)]*" + re.escape(filename) + r")(\))")
+    found = md_images(text)
+    for match, key, _source in reversed(found):
         if key not in images:
-            continue  # 单方案防御模式：替代方案图在 md 中无引用，跳过
-        if keep_absolute:
-            target = images[key].resolve().as_posix()
+            replacement = "（单方案防御：替代方案不适用）"
         else:
-            target = data_uri(images[key])
-        text = pat.sub(lambda m: m.group(1) + target + m.group(3), text)
-        # 标准图名也可定位已经内嵌的引用，支持再次内嵌与绝对路径回退。
-        named = re.compile(r"(!\[" + re.escape(key) + r"\]\()([^)]*)(\))")
-        text = named.sub(lambda m: m.group(1) + target + m.group(3), text)
+            target = images[key].resolve().as_posix() if keep_absolute else data_uri(images[key])
+            replacement = "![%s](%s)" % (key, target)
+        text = text[:match.start()] + replacement + text[match.end():]
+    note = "\n\n> 注：本报告图片使用绝对路径引用（当前查看器不支持 data URI 图片时的回退模式）；图片目录保留在 `图表/`。\n"
     if keep_absolute:
-        note = "\n\n> 注：本报告图片使用绝对路径引用（当前查看器不支持 data URI 图片时的回退模式）；图片目录保留在 `图表/`。\n"
-        if "回退模式" not in text:
+        if note not in text:
             text += note
+    else:
+        text = text.replace(note, "")
     if write:
         md_path.write_text(text, encoding="utf-8", newline="")
     return text
@@ -97,19 +156,21 @@ def embed_md(md_path: pathlib.Path, images, keep_absolute: bool, write=True):
 
 def embed_html(html_path: pathlib.Path, images, write=True):
     text = html_path.read_text(encoding="utf-8")
+    for match, key, attributes in reversed(pano_images(text)):
+        if key not in images:
+            replacement = '<p data-scheme-unavailable="替代方案">（单方案防御模式：替代方案未出图，不适用）</p>'
+        else:
+            if "src" not in attributes:
+                raise SystemExit("[校验失败] 全景图缺少 src 属性")
+            replacement = SRC_PATTERN.sub(lambda _match: 'src="' + data_uri(images[key]) + '"', match.group(), count=1)
+            if "data-scheme" not in attributes:
+                replacement = re.sub(r"\s*/?>$", ' data-scheme="' + key.replace("全景", "") + '">', replacement)
+        text = text[:match.start()] + replacement + text[match.end():]
     for key, token in HTML_TOKENS.items():
         if key in images:
-            uri = data_uri(images[key])
-            # 1) src="{{token}}" 注入 data URI
-            text = re.sub(r'src="' + re.escape(token) + r'"', 'src="' + uri + '"', text)
-            # 2) 其余出现处（如图片缺失提示）替换为相对文件名，避免大段 base64 文本
+            # 提示中的路径使用文件名，图片 src 已按稳定方案标识统一替换。
             text = text.replace(token, images[key].name)
         else:
-            # 单方案防御模式：删除缺失图的 <img> 标签（跨行，含 onerror），
-            # 图片缺失提示改为"不适用"。[^<]* 保证不跨过其他 <img> 标签
-            img_pat = re.compile(r'<img class="pano-img"[^<]*src="' + re.escape(token) + r'"[^<]*>',
-                                 re.DOTALL)
-            text = img_pat.sub("", text)
             miss_pat = re.compile(r'<div class="img-missing">[^<]*' + re.escape(token) + r'[^<]*</div>')
             text = miss_pat.sub(
                 '<div class="img-missing">（单方案防御模式：替代方案未出图，不适用）</div>', text)
@@ -146,7 +207,8 @@ def validate(md_text: str, html_text: str, images, keep_absolute: bool):
         for path in images.values():
             verify_png(path.read_bytes())
     expected = len(images)  # 标准模式 2 张；单方案防御模式 1 张（见 naming.IMAGE_KEYS）
-    html_imgs = len(re.findall(r'<img class="pano-img"', html_text))
+    html_records = pano_images(html_text)
+    html_imgs = len(html_records)
     html_uris = html_text.count("data:image/png;base64,")
     if "波浪理论网页报告模板" not in html_text:
         raise SystemExit("[校验失败] html 缺少模板头部特征注释（\"波浪理论网页报告模板\"），疑似非模板生成")
@@ -162,8 +224,8 @@ def validate(md_text: str, html_text: str, images, keep_absolute: bool):
         if token in html_text:
             raise SystemExit(f"[校验失败] html 仍含未替换占位符：{token}")
 
-    md_links = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", md_text)
-    md_png = [m for m in md_links if m.startswith("data:image/png;base64,") or m.endswith(".png")]
+    md_records = md_images(md_text)
+    md_png = [source for _match, _key, source in md_records]
     if len(md_png) != expected:
         raise SystemExit(f"[校验失败] md 图片标记 {len(md_png)} 个 ≠ 实际图表 {expected} 张")
     if keep_absolute:
@@ -173,6 +235,34 @@ def validate(md_text: str, html_text: str, images, keep_absolute: bool):
     else:
         if any(not m.startswith("data:image/png;base64,") for m in md_png):
             raise SystemExit("[校验失败] md 中仍有未内嵌的 PNG 引用")
+
+    # 逐方案核对原图和两份文档，而不是只核对张数和 PNG 是否能解码。
+    for key, path in images.items():
+        md_sources = [source for _match, found_key, source in md_records if found_key == key]
+        html_sources = [attrs.get("src", "") for _match, found_key, attrs in html_records if found_key == key]
+        if len(md_sources) != 1 or len(html_sources) != 1:
+            raise SystemExit("[校验失败] %s 在每份文档中须恰有一张图" % key)
+        payload = path.read_bytes()
+        verify_png(payload)
+        original_hash = hashlib.sha256(payload).digest()
+        for label, source in (("md", md_sources[0]), ("html", html_sources[0])):
+            if label == "md" and keep_absolute:
+                if pathlib.Path(source).resolve() != path.resolve():
+                    raise SystemExit("[校验失败] %s 回退路径不是当前方案原图" % key)
+                embedded_payload = pathlib.Path(source).read_bytes()
+            else:
+                if not source.startswith("data:image/png;base64,"):
+                    raise SystemExit("[校验失败] %s 的 %s 图片未内嵌" % (label, key))
+                try:
+                    embedded_payload = base64.b64decode(source.split(",", 1)[1], validate=True)
+                except ValueError as exc:
+                    raise SystemExit("[校验失败] %s 图片编码无效：%s" % (label, exc))
+            if hashlib.sha256(embedded_payload).digest() != original_hash:
+                raise SystemExit("[校验失败] %s 的 %s 图片与当前 PNG 原图不一致" % (label, key))
+    if expected == 1:
+        notices = re.findall(r'''<(?:p\b[^>]*data-scheme-unavailable=["']替代方案["'][^>]*|div class="img-missing")>([^<]*)</(?:p|div)>''', html_text)
+        if not any("替代方案" in notice and "不适用" in notice for notice in notices):
+            raise SystemExit("[校验失败] 单方案防御网页须在替代方案图区明确标记不适用")
 
 
 def main():

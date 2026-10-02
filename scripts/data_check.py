@@ -35,6 +35,7 @@ CSV 列：date,open,high,low,close[,volume]（date 兼容 YYYY-MM-DD 与 YYYYMMD
 
 import argparse
 import datetime
+import re
 import sys
 
 import pandas as pd
@@ -66,9 +67,7 @@ def _parse_dates(df):
     """返回 (成功解析的 Series 或 None, 错误信息)。"""
     raw = df["date"].astype(str)
     try:
-        if raw.str.contains("-").any():
-            return pd.to_datetime(raw, errors="coerce"), None
-        return pd.to_datetime(raw, format="%Y%m%d", errors="coerce"), None
+        return raw.map(lambda value: pd.to_datetime(value, errors="coerce")), None
     except Exception as e:  # noqa: BLE001
         return None, str(e)
 
@@ -78,8 +77,29 @@ def _rows(mask, df=None, limit=10):
     行号 = pandas index + 2（表头占 1 + 索引基准 1）；df 非空时附注对应日期，便于定位。"""
     idxs = list(df_index(mask)[:limit])
     if df is not None:
-        return ["%d(%s)" % (int(i) + 2, str(df["date"].loc[i])[:10]) for i in idxs]
+        return ["%d(%s)" % (int(i) + 2, str(df["date"].loc[i])) for i in idxs]
     return [int(i) + 2 for i in idxs]
+
+
+def date_formatter(raw_dates):
+    """依据输入格式保留日期/时刻精度，午夜时刻同样保留。"""
+    values = [str(value).strip() for value in raw_dates]
+    timed = any(re.search(r"[T ]\d{2}:\d{2}", value) for value in values)
+    seconds = any(re.search(r"\d{2}:\d{2}:\d{2}", value) for value in values)
+    fractions = [len(match.group(1)) for value in values
+                 for match in [re.search(r"\d{2}:\d{2}:\d{2}\.(\d+)", value)] if match]
+
+    def format_date(value):
+        timestamp = pd.Timestamp(value)
+        if not timed:
+            return timestamp.strftime("%Y-%m-%d")
+        text = timestamp.strftime("%Y-%m-%d %H:%M:%S" if seconds else "%Y-%m-%d %H:%M")
+        if fractions:
+            text += "." + ("%06d%03d" % (timestamp.microsecond, timestamp.nanosecond))[:max(fractions)]
+        if timestamp.tzinfo is not None:
+            text += timestamp.strftime("%z")
+        return text
+    return format_date
 
 
 def df_index(mask):
@@ -92,6 +112,7 @@ def run_checks(df, fq, source):
     rows = []
     facts = {}
     n = len(df)
+    fmt = date_formatter(df["date"])
 
     # ---- 1/2. OHLC 合理性 ----
     h = df["high"].astype(float)
@@ -138,33 +159,33 @@ def run_checks(df, fq, source):
         dup = dates.duplicated()
         if dup.any():
             rows.append(("日期升序、无重复、可解析", "不通过",
-                         "日期重复：%s" % sorted(dates[dup].dt.strftime("%Y-%m-%d").unique()[:5])))
+                         "日期重复：%s" % sorted(dates[dup].map(fmt).unique()[:5])))
         elif not dates.is_monotonic_increasing:
             rows.append(("日期升序、无重复、可解析", "不通过", "日期未按升序排列"))
         else:
             rows.append(("日期升序、无重复、可解析", "通过", "%d 根，%s 至 %s"
-                         % (n, dates.iloc[0].strftime("%Y-%m-%d"), dates.iloc[-1].strftime("%Y-%m-%d"))))
+                         % (n, fmt(dates.iloc[0]), fmt(dates.iloc[-1]))))
     # 缺口披露（解析成功才做）
     if dates is not None and not dates.isna().any():
         delta = dates.diff().dt.days
-        gaps = dates[delta > 3]
-        if len(gaps):
+        gap_positions = [position for position, gap in enumerate(delta) if pd.notna(gap) and gap > 3]
+        if gap_positions:
             facts["calendar_gaps"] = ["%s（前一根 %s，间隔 %d 天）"
-                                      % (dates[i].strftime("%Y-%m-%d"),
-                                         dates[i - 1].strftime("%Y-%m-%d"), int(delta.iloc[i]))
-                                      for i in gaps.index][:10]
+                                      % (fmt(dates.iloc[position]), fmt(dates.iloc[position - 1]),
+                                         int(delta.iloc[position]))
+                                      for position in gap_positions][:10]
         else:
             facts["calendar_gaps"] = []
 
     # ---- 4/5. 复权与数据源标注 ----
     if fq:
-        rows.append(("复权口径已标注且全程一致", "通过", "%s（单文件，全程一致）" % fq))
+        rows.append(("复权口径已标注且全程一致", "通过", "%s（已记录声明；实际复权与全程一致性未独立验证）" % fq))
     else:
         rows.append(("复权口径已标注且全程一致", "不通过",
                      "未标注（--fq 未提供）；禁止声称未核实过的复权方式"))
     if source:
         rows.append(("数据源与截至时间已记录", "通过",
-                     "%s；最新 bar %s" % (source, dates.iloc[-1].strftime("%Y-%m-%d")
+                     "%s；最新 bar %s（来源声明，未独立验证）" % (source, fmt(dates.iloc[-1])
                                           if dates is not None and not dates.isna().any() else "未知")))
     else:
         rows.append(("数据源与截至时间已记录", "不通过", "未标注（--source 未提供）"))
@@ -172,16 +193,17 @@ def run_checks(df, fq, source):
     # ---- 披露事实 ----
     if dates is not None and not dates.isna().any():
         facts["n_bars"] = n
-        facts["date_range"] = [dates.iloc[0].strftime("%Y-%m-%d"), dates.iloc[-1].strftime("%Y-%m-%d")]
+        facts["date_range"] = [fmt(dates.iloc[0]), fmt(dates.iloc[-1])]
         facts["span_days"] = int((dates.iloc[-1] - dates.iloc[0]).days)
-        facts["last_bar"] = dates.iloc[-1].strftime("%Y-%m-%d")
+        facts["last_bar"] = fmt(dates.iloc[-1])
+        facts["last_bar_date"] = dates.iloc[-1].date().isoformat()
         facts["today"] = datetime.date.today().isoformat()
         # 极值用 pandas idxmax/idxmin（默认 skipna），全 NaN 时记 None，
         # 防止 np.argmax 命中 NaN 位置导致输出 "nan" 假事实
         facts["extremes"] = {
-            "high": (float(h.max()), dates.iloc[int(h.idxmax())].strftime("%Y-%m-%d"))
+            "high": (float(h.max()), fmt(dates.loc[h.idxmax()]))
                     if h.notna().any() else None,
-            "low": (float(l.min()), dates.iloc[int(l.idxmin())].strftime("%Y-%m-%d"))
+            "low": (float(l.min()), fmt(dates.loc[l.idxmin()]))
                    if l.notna().any() else None,
         }
         facts["last_close"] = float(c.iloc[-1]) if pd.notna(c.iloc[-1]) else None
@@ -195,6 +217,8 @@ def main(argv=None):
     ap.add_argument("--csv", required=True, help="行情 CSV 路径")
     ap.add_argument("--source", default="", help="数据源标注（如：腾讯 fqkline / 东财 2.931152），未提供判不通过")
     ap.add_argument("--fq", default="", help="复权口径标注（none/qfq/hfq），未提供判不通过")
+    ap.add_argument("--metadata", help="元数据 JSON/旧 key=value 路径；自动发现同名 .metadata.json")
+    ap.add_argument("--require-metadata", action="store_true", help="要求五字段完整元数据且 CSV 哈希绑定通过")
     args = ap.parse_args(argv)
 
     df, err = load_csv(args.csv)
@@ -206,15 +230,20 @@ def main(argv=None):
         print("\n存在不通过项：退回重新取数或按数据获取协议降级，禁止带病数据进入数浪。")
         return 1
     try:
-        from ohlc_io import select_range, validate_ohlc
+        from ohlc_io import check_metadata, select_range, validate_ohlc
+        metadata = check_metadata(args.csv, args.metadata, args.source, args.fq, args.require_metadata)
+        args.source, args.fq = metadata["source"], metadata["fq"]
         df = select_range(df, args.start, args.end)
         validate_ohlc(df)
         rows, facts = run_checks(df, args.fq, args.source)
-    except (ValueError, TypeError, KeyError) as exc:
+    except (ValueError, TypeError, KeyError, OSError) as exc:
         print("| 数据有效性 | 不通过 | %s |" % exc)
         return 1
     for name, verdict, note in rows:
         print("| %s | %s | %s |" % (name, verdict, note))
+    print("| 元数据与 CSV 绑定 | %s | %s；as_of=%s；时区=%s |"
+          % ("通过" if metadata["bound"] else "未绑定", metadata["note"],
+             metadata["as_of"] or "未记录", metadata["timezone"]))
     # 表头契约本身
     extra = set(df.columns) - {"date", "open", "high", "low", "close", "volume"}
     print("| 表头契约 | 通过 | date,open,high,low,close[,volume]%s |"
@@ -241,9 +270,9 @@ def main(argv=None):
             print("3. 当前价格位置：极值或最新收盘缺失，分位不可算（见自检表不通过项）")
         print("4. 复权方式 %s、数据源 %s、最新 bar %s（今天 %s，%s）"
               % (args.fq or "未标注", args.source or "未标注", facts["last_bar"], facts["today"],
-                 "最新 bar 为今日——请判定是否已收盘" if facts["last_bar"] == facts["today"]
+                 "最新 bar 为今日——请判定是否已收盘" if facts["last_bar_date"] == facts["today"]
                  else "最新 bar 非今日，间隔 %d 天" % (datetime.date.fromisoformat(facts["today"])
-                                                     - datetime.date.fromisoformat(facts["last_bar"])).days))
+                                                     - datetime.date.fromisoformat(facts["last_bar_date"])).days))
         if facts.get("calendar_gaps"):
             print("\n披露：日历缺口（停牌/节假日由模型说明）——%s" % "；".join(facts["calendar_gaps"]))
         print("\n披露：循环覆盖判定素材——共 %d 根 / %d 天，是否覆盖一个完整 5+3 循环由模型判定并披露。"

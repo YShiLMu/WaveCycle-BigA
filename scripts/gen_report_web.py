@@ -51,21 +51,22 @@ def main():
     if any("{{%s}}" % key not in html for key in ("网页分析前提", "网页主方案", "网页替代方案")):
         fail("网页报告模板缺少精简前提或方案表；请从源文件重新构建并同步安装")
 
-    # 1) 表格（网页 HTML 表格，先于文本）
+    # 程序生成的 HTML 与用户文本分别传入，避免 JSON 内容进入标记或被再次替换。
+    fragments = {}
     for tname, cols in rc.TABLE_FIELDS.items():
-        html = html.replace("{{%s表}}" % tname, rc.render_html_table(cols, tables[tname]))
+        fragments[tname + "表"] = rc.render_html_table(cols, tables[tname])
 
     # 2) 文本字段 + 简明分析说明 + 标的名称/代码（简明说明换行转 <br>，避免 HTML 折叠成一行）
     mapping = dict(fields)
     mapping.update({"标的名称": name, "标的代码": code,
-                    "简明分析说明": rc.render_jianming(jm, data["analysis_scope"]).replace("\n", "<br>\n"),
-                    "网页分析前提": rc.render_web_premise(data),
+                    "简明分析说明": rc.render_jianming(jm, data["analysis_scope"])})
+    fragments.update({"网页分析前提": rc.render_web_premise(data),
                     "网页主方案": rc.render_web_scheme(data, "主方案"),
                     "网页替代方案": rc.render_web_scheme(data, "替代方案")})
-    html = rc.substitute(html, mapping)
+    html = rc.substitute_html(html, mapping, fragments)
 
     if data["报告模式"] == "单方案防御":
-        html = html.replace("<body>", "<body><p>报告模式：单方案防御；原因：" + data["单方案原因"] + "</p>")
+        html = html.replace("<body>", "<body><p>报告模式：单方案防御；原因：" + rc.html_text(data["单方案原因"]) + "</p>")
 
     # 3) 模板说明文字里的字面 {{表名}} / {{字段名}} 非数据占位符，中和防残留误判
     html = html.replace("{{表名}}", "表名")

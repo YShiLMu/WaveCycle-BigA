@@ -27,6 +27,7 @@ import re
 import sys
 import base64
 import math
+import html
 
 from naming import IMAGE_PLACEHOLDERS, validate_component
 from analysis_scope import validate_scope, scope_tables, endpoint_chain, position_tables
@@ -64,7 +65,36 @@ def extract_state(text):
     matches = re.findall(STATE_PATTERN, text)
     if len(matches) != 1:
         raise ValueError("报告须含唯一 v1 状态；历史报告请用 --text 恢复正文后补齐输入")
-    return json.loads(base64.b64decode(matches[0], validate=True).decode("utf-8"))
+    def reject_constant(value):
+        raise ValueError("报告状态不能含非有限 JSON 数值：%s" % value)
+
+    def unique_object(pairs):
+        obj = {}
+        for key, value in pairs:
+            if key in obj:
+                raise ValueError("报告状态含重复 JSON 键：%s" % key)
+            obj[key] = value
+        return obj
+
+    state = json.loads(base64.b64decode(matches[0], validate=True).decode("utf-8"),
+                       parse_constant=reject_constant, object_pairs_hook=unique_object)
+    if not isinstance(state, dict):
+        raise ValueError("报告状态顶层须为 JSON 对象")
+    def check_finite(value):
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("报告状态不能含非有限 JSON 数值")
+        if isinstance(value, dict):
+            for child in value.values():
+                check_finite(child)
+        elif isinstance(value, list):
+            for child in value:
+                check_finite(child)
+    check_finite(state)
+    # 恢复检查只约束容器类型，旧版本字段完整性留待迁移后由 validate 检查。
+    for key in ("fields", "tables", "简明分析说明", "analysis_scope"):
+        if key in state and not isinstance(state[key], dict):
+            raise ValueError("报告状态的 %s 须为对象" % key)
+    return state
 
 
 def finite_number(value, label):
@@ -203,6 +233,9 @@ def validate(data):
             if row["因子"] == "道氏一致性" and value == "不适用":
                 continue
             score = finite_number(value, "八因子评分")
+            if row["因子"] == "Guideline 得分" and (
+                    isinstance(value, bool) or not re.fullmatch(r"[+-]?\d+", str(value).strip())):
+                fail("Guideline 得分须为整数，与 score.py 累计分口径一致")
             if row["因子"] != "Guideline 得分" and score not in (0, 1, 2):
                 fail("除 Guideline 得分外，因子分值须为 0/1/2")
     active_plans = {"主方案"} if defensive else {"主方案", "替代方案"}
@@ -321,8 +354,8 @@ def render_web_scheme(data, name):
 
 def render_html_table(cols, rows):
     """生成网页 HTML 表格：<table><thead>…</thead><tbody>…</tbody></table>。"""
-    thead = "".join("<th>%s</th>" % c for c in cols)
-    body = "".join("<tr>%s</tr>" % "".join("<td>%s</td>" % str(r.get(c, "")) for c in cols)
+    thead = "".join("<th>%s</th>" % html_text(c) for c in cols)
+    body = "".join("<tr>%s</tr>" % "".join("<td>%s</td>" % html_text(r.get(c, "")) for c in cols)
                    for r in rows)
     return "<table><thead><tr>%s</tr></thead><tbody>%s</tbody></table>" % (thead, body)
 
@@ -366,6 +399,17 @@ def render_jianming(jm, scope=None):
 
 def substitute(text, mapping):
     """把 {{key}} 替换为 mapping[key]；未知占位符保留，供各入口做残留校验。"""
-    for key, val in mapping.items():
-        text = text.replace("{{%s}}" % key, str(val))
-    return text
+    return re.sub(r"\{\{([^}]+)\}\}",
+                  lambda match: str(mapping.get(match.group(1), match.group(0))), text)
+
+
+def html_text(value):
+    """用户数据按文本转义；换行仅由本渲染器生成 <br>。"""
+    return html.escape(str(value), quote=True).replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br>\n")
+
+
+def substitute_html(template, text_fields, html_fragments=None):
+    """分别接受用户文本和程序生成的可信片段，不从 JSON 接受原始 HTML。"""
+    mapping = {key: html_text(value) for key, value in text_fields.items()}
+    mapping.update(html_fragments or {})
+    return substitute(template, mapping)

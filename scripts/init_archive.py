@@ -18,7 +18,7 @@
   - --time 省略时取当前本地时间；Windows 文件夹名禁止 \\ / : * ? " < > |，
     时间一律 4 位（0924），脚本对名称/代码做非法字符校验；
   - 幂等：文件夹已存在时报错退出（避免误写进旧文件夹；更新数浪应写回原文件夹，
-    由模型显式指定 --root 指向既有目录并用 --force 才允许复用）。
+    由模型显式指定 --existing-dir 指向既有目录并用 --force 才允许复用）。
 """
 import argparse
 import datetime
@@ -29,12 +29,14 @@ import sys
 from naming import IMAGE_FILENAMES, doc_names, validate_component
 
 
-def main():
+def main(argv=None):
     p = argparse.ArgumentParser(
         description="创建分析输出归档文件夹（命名规范唯一权威）")
     p.add_argument("--name", required=True, help="标的名称（如 饮料制造）")
     p.add_argument("--code", required=True, help="标的代码（如 881133）")
-    p.add_argument("--root", default="分析输出", help="归档根目录（默认 ./分析输出）")
+    target = p.add_mutually_exclusive_group()
+    target.add_argument("--root", default=None, help="新建归档的父目录（默认 ./分析输出），不能传既有归档目录")
+    target.add_argument("--existing-dir", help="复用既有归档绝对路径；须 --force，核对名称/代码/时间戳")
     p.add_argument("--time", default=None,
                    help="时间戳 YYYYMMDD_HHMM（默认当前本地时间；更新写回场景配合 --force 使用）")
     p.add_argument("--force", action="store_true",
@@ -43,16 +45,42 @@ def main():
                    help="只打印归档文件夹绝对路径（单行，便于 shell $(...) 捕获）；仍执行创建")
     p.add_argument("--print-stamp", action="store_true",
                    help="只打印时间戳 YYYYMMDD_HHMM（单一来源：供 data.json/文件名与文件夹名保持一致）")
-    args = p.parse_args()
+    args = p.parse_args(argv)
 
     name = validate_component(args.name, "标的名称")
     code = validate_component(args.code, "标的代码")
-    stamp = args.time or datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    if args.existing_dir:
+        if not args.force:
+            p.error("--existing-dir 必须配合 --force 明确复用")
+        if not os.path.isabs(args.existing_dir):
+            p.error("--existing-dir 必须为绝对路径")
+        folder = os.path.abspath(args.existing_dir)
+        if not os.path.isdir(folder):
+            p.error("--existing-dir 必须是已存在的归档目录")
+        prefix = "%s_%s_" % (name, code)
+        basename = os.path.basename(folder)
+        if not basename.startswith(prefix):
+            p.error("既有归档目录名称与 --name / --code 不一致")
+        folder_stamp = basename[len(prefix):]
+        if args.time and args.time != folder_stamp:
+            p.error("--time 与既有归档目录时间戳不一致")
+        stamp = folder_stamp
+    else:
+        stamp = args.time or datetime.datetime.now().strftime("%Y%m%d_%H%M")
     if not re.fullmatch(r"\d{8}_\d{4}", stamp):
         raise SystemExit("[错误] --time 格式应为 YYYYMMDD_HHMM，收到: %s" % stamp)
+    try:
+        datetime.datetime.strptime(stamp, "%Y%m%d_%H%M")
+    except ValueError:
+        p.error("归档时间戳不是有效本地日期时间")
 
-    folder = os.path.join(args.root, "%s_%s_%s" % (name, code, stamp))
-    if os.path.exists(folder) and not args.force:
+    if not args.existing_dir:
+        root = args.root or "分析输出"
+        # 旧误用 --root 指向归档会造成再嵌套一层，显式阻断。
+        if re.search(r"_\d{8}_\d{4}$", os.path.basename(os.path.normpath(root))):
+            p.error("--root 应为归档父目录；复用已有归档请用 --existing-dir --force")
+        folder = os.path.join(root, "%s_%s_%s" % (name, code, stamp))
+    if os.path.exists(folder) and not args.force and not args.existing_dir:
         raise SystemExit("[错误] 归档文件夹已存在（更新写回请加 --force 并确认是同一标的）: %s" % folder)
     os.makedirs(os.path.join(folder, "图表"), exist_ok=True)
 

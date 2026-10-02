@@ -9,7 +9,7 @@
    坏数据 CSV（high<low、日期乱序）验证数据自检拦截（应报错退出，workflow 1.5 口径）；
 2. ew_chart.py —— 绘制 2 张标准图（每方案一张全景，见 naming.CHART_VIEWS；中文标题、浪段方向 auto/显式、失效价位、
    江恩 --gann-auto-scale 自动刻度、--path 连续浪路径），验证 PNG 非空生成；
-3. embed_report_images.py —— 标准 4 图模式与单方案防御 2 图模式各建一个归档
+3. embed_report_images.py —— 标准 2 图模式与单方案防御 1 图模式各建一个归档
    文件夹，跑内嵌与校验（含模板头部特征注释校验、替代方案图区"不适用"标记）；
 4. score.py —— 八因子加权排序与共振标签；
 5. swings.py —— 合成 CSV 跑分形摆动点提取、--tail 截断与 --chart-args 参数串；
@@ -257,9 +257,17 @@ def main(argv=None):
                     encoding="utf-8").read()
         check("%s html 内嵌 %d 张" % (case, n_img),
               html.count("data:image/png;base64,") == n_img)
-        if n_img == 2:
-            if case == "防御1图":
-                check("防御1图 替代方案图区标记不适用", "单方案防御模式" in html)
+        if case == "防御1图":
+            check("防御1图 替代方案图区标记不适用", "单方案防御模式" in html and "不适用" in html)
+            alternate_imgs = re.findall(r'<img\b[^>]*(?:data-scheme="替代方案"|alt="替代方案全景图")[^>]*>', html)
+            check("防御1图 无替代方案图片", not alternate_imgs)
+            html_path = os.path.join(folder, "网页报告_冒烟_000000_20260101.html")
+            with open(html_path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(html.replace("不适用", "未标明"))
+            bad_code, _bad_out, bad_err = run([sys.executable, os.path.join(HERE, "embed_report_images.py"), folder])
+            check("防御1图 缺少不适用提示被拒绝", bad_code != 0 and "不适用" in bad_err)
+            with open(html_path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(html)
         md = open(os.path.join(folder, "分析报告_冒烟_000000_20260101.md"),
                   encoding="utf-8").read()
         check("%s md 内嵌 %d 张" % (case, n_img),
@@ -462,8 +470,8 @@ def main(argv=None):
           "已触发规则失效（立即生效" in out and "2024-01-01 | 2024-01-01" in out)
     check("未触发（94）", "未触发" in out)
     check("升破方向未触发（112）", "112.000" in out)
-    check("触发摘要计数 1/3（规则立即失效，不计结构确认窗口）",
-          "1/3 个失效价位已触发，其中 0 个已过确认窗口" in out)
+    check("触发摘要分列 3 个价位、3 个分支、1 个已触发（规则立即失效）",
+          "价位数 3；判定分支 3，其中 1 个已触发，0 个已确认；方向待确认 0" in out)
     code, out, err = run([sys.executable, os.path.join(HERE, "invalidation_check.py"),
                           "--csv", inv_csv, "--since", "2024-01-05",
                           "--level", "99|break-down|主方案|规则失效|R7"])
@@ -487,7 +495,8 @@ def main(argv=None):
                           "--csv", inv_csv, "--from-report", rep_new])
     check("--from-report 锚点抽取正常退出", code == 0, (out + err).strip()[:200])
     check("锚点抽取标注来源", "锚点抽取" in out)
-    check("新报告方向列零推断（无方向待确认）", "方向待确认" not in out)
+    check("新报告方向列零推断（方向待确认数为 0）",
+          "方向待确认 0" in out and "（方向待确认）" not in out)
     check("观察位单列且不参与判定", "观察位" in out and "不参与触发判定" in out
           and "| 升破 |" not in out, out.strip()[-300:])
 

@@ -9,6 +9,11 @@
   - data_check.py 是自检器（坏数据不 raise，记「不通过」行整体退出码 1），检查
     项与本模块同口径但输出路径不同，不共用实现。
 """
+import hashlib
+import json
+import os
+import re
+
 import pandas as pd
 import numpy as np
 
@@ -94,3 +99,86 @@ def load_ohlc(csv_path, set_date_index=False, start=None, end=None):
 def fmt_date(d):
     """日期值 → 'YYYY-MM-DD'；None → '-'（判定表格的未发生占位）。"""
     return pd.Timestamp(d).strftime("%Y-%m-%d") if d is not None else "-"
+
+
+def check_metadata(csv_path, metadata_path=None, source="", fq="", require=False):
+    """校验数据声明与 CSV 的绑定；不把哈希一致解释为来源真实性已验证。
+
+    自动发现同名 ``<CSV去扩展名>.metadata.json``；旧 key=value 声明可读，
+    缺哈希时仅作未绑定声明。正式链用 require=True 要求五个字段完整。
+    """
+    candidate = os.path.splitext(os.path.abspath(csv_path))[0] + ".metadata.json"
+    path = metadata_path or (candidate if os.path.isfile(candidate) else None)
+    if path is None:
+        if require:
+            raise ValueError("正式数据链要求元数据：提供 --metadata 或同名 .metadata.json")
+        return {"source": source, "fq": fq, "timezone": "未知",
+                "as_of": None, "bound": False, "note": "未绑定元数据；数据源与复权仅为调用者声明"}
+    with open(path, encoding="utf-8-sig") as stream:
+        text = stream.read()
+    if text.lstrip().startswith("{"):
+        def unique_fields(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError("元数据字段重复：%s" % key)
+                result[key] = value
+            return result
+        meta = json.loads(text, object_pairs_hook=unique_fields)
+        if not isinstance(meta, dict):
+            raise ValueError("元数据必须为 JSON 对象")
+    else:
+        meta = {}
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                raise ValueError("旧元数据每行须为 key=value")
+            key, value = line.split("=", 1)
+            if key.strip() in meta:
+                raise ValueError("元数据字段重复：%s" % key.strip())
+            meta[key.strip()] = value.strip()
+        if "adj" in meta and "fq" not in meta:
+            meta["fq"] = meta["adj"]
+    required = ("source", "fq", "as_of", "timezone", "csv_sha256")
+    for key, value in meta.items():
+        if key in required and (not isinstance(value, str) or not value.strip()):
+            raise ValueError("元数据 %s 须为非空字符串" % key)
+    if require and any(not meta.get(key) for key in required):
+        raise ValueError("正式数据链元数据缺少字段：%s" % ", ".join(key for key in required if not meta.get(key)))
+    for key, declared in (("source", source), ("fq", fq)):
+        if declared and meta.get(key) and declared.strip() != meta[key].strip():
+            raise ValueError("--%s 与元数据冲突" % key)
+    digest = meta.get("csv_sha256")
+    if digest:
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
+            raise ValueError("csv_sha256 须为 64 位十六进制 SHA-256")
+        with open(csv_path, "rb") as stream:
+            actual = hashlib.sha256(stream.read()).hexdigest()
+        if digest.lower() != actual:
+            raise ValueError("元数据 CSV 哈希不匹配，禁止沿用旧数据声明")
+    as_of = meta.get("as_of")
+    if as_of:
+        try:
+            as_of_ts = pd.Timestamp(as_of)
+            if pd.isna(as_of_ts):
+                raise ValueError("空日期")
+            csv_dates = pd.read_csv(csv_path, usecols=["date"])["date"].astype(str)
+            latest = max(pd.Timestamp(value) for value in csv_dates)
+            # date-only 声明按当天覆盖；未知时区不替数据猜测 UTC 偏移。
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}|\d{8}", as_of):
+                earlier = as_of_ts.date() < latest.date()
+            elif as_of_ts.tzinfo is not None and latest.tzinfo is not None:
+                earlier = as_of_ts.tz_convert("UTC") < latest.tz_convert("UTC")
+            else:
+                earlier = as_of_ts.tz_localize(None) < latest.tz_localize(None)
+            if earlier:
+                raise ValueError("as_of 早于 CSV 最新 bar")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("元数据 as_of 日期无效或与 CSV 不一致：%s" % exc) from exc
+    return {"source": meta.get("source", source), "fq": meta.get("fq", fq),
+            "timezone": meta.get("timezone", "未知"), "as_of": as_of,
+            "bound": bool(digest),
+            "note": ("CSV 哈希绑定通过；来源与复权为元数据声明，未独立验证" if digest
+                     else "未绑定元数据（缺 csv_sha256）；数据源与复权仅为声明")}

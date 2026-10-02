@@ -57,6 +57,8 @@ def main(argv=None):
     ap.add_argument("--csv", required=True, help="行情 CSV 路径")
     ap.add_argument("--source", default="", help="数据源标注（透传 data_check，缺判不通过）")
     ap.add_argument("--fq", default="", help="复权口径标注 none/qfq/hfq（透传 data_check，缺判不通过）")
+    ap.add_argument("--metadata", help="元数据路径（透传 data_check；自动发现同名 .metadata.json）")
+    ap.add_argument("--require-metadata", action="store_true", help="要求完整且与 CSV 哈希绑定的元数据")
     ap.add_argument("--k", type=int, default=5, help="swings 分形窗口（默认 5）")
     ap.add_argument("--start", default=None, help="全部检查的分析起始日期（索引基准不变）")
     ap.add_argument("--end", default=None, help="全部检查的分析截止日期")
@@ -85,6 +87,10 @@ def main(argv=None):
         dc_args += ["--source", args.source]
     if args.fq:
         dc_args += ["--fq", args.fq]
+    if args.metadata:
+        dc_args += ["--metadata", args.metadata]
+    if args.require_metadata:
+        dc_args.append("--require-metadata")
     code = run_script("data_check.py", dc_args, window)
     if code != 0:
         print("\n[preflight 终止] data_check 存在不通过项——禁止带病数据进入数浪（01 分析市场 1.5）。"

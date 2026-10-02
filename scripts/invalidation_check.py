@@ -160,6 +160,23 @@ def _infer_direction(text):
     return "break-down" if down else "break-up"
 
 
+def parse_price_cell(text):
+    """价位格只接受一个完整有限数值，避免从多价或科学计数中截取前缀。"""
+    value = text.strip().strip("*`").strip()
+    pattern = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+    # 只接受规范三位分组逗号；不把 1,2 等含混片段拼成一个数。
+    if "," in value:
+        if not re.fullmatch(r"[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?(?:[eE][+-]?\d+)?", value):
+            raise ValueError("价位格须为一个明确数字，逗号只用于规范千位分组")
+        value = value.replace(",", "")
+    if not re.fullmatch(pattern, value):
+        raise ValueError("价位格须为一个完整数字（支持科学计数），不得混放多个价位或说明")
+    price = float(value)
+    if not math.isfinite(price) or price <= 0:
+        raise ValueError("价位须为正的有限数")
+    return price
+
+
 def parse_report_levels(path):
     """从报告 .md 抽取失效价位。
     返回 (rules, structural, observations, note)：
@@ -192,11 +209,12 @@ def parse_report_levels(path):
             return cells[i] if i is not None and i < len(cells) else ""
 
         plan, kind, basis = cell(i_plan), cell(i_kind), cell(i_basis)
-        m = re.search(r"-?\d+(?:\.\d+)?", cell(i_price).replace(",", ""))
-        if not m:
-            raise SystemExit("[错误] 失效价位列不是数字：%r（行：%s）"
-                             % (cell(i_price), ln.strip()[:80]))
-        entry = {"price": float(m.group()), "plan": plan or "-", "kind": kind,
+        try:
+            price = parse_price_cell(cell(i_price))
+        except ValueError as exc:
+            raise SystemExit("[错误] 失效价位列无效：%r；%s（行：%s）"
+                             % (cell(i_price), exc, ln.strip()[:80]))
+        entry = {"price": price, "plan": plan or "-", "kind": kind,
                  "rule": "、".join(re.findall(r"R\d+", basis)) or basis[:24],
                  "basis": basis}
         # 方向三层降级：① 方向列（零推断）② 类型括号（上/下）③ 关键词推断 ④ 双向各查
@@ -330,11 +348,15 @@ def main(argv=None):
     n_trig = 0
     n_conf = 0
     n_levels = 0
+    n_branches = 0
+    n_unknown = 0
     for lv in levels:
         pending = lv.get("direction") is None
         dirs = ("break-down", "break-up") if pending else (lv["direction"],)
         n_levels += 1
+        n_unknown += int(pending)
         for d in dirs:
+            n_branches += 1
             sub = dict(lv, direction=d,
                        kind=lv["kind"] + "（方向待确认）" if pending else lv["kind"])
             r = check_level(df, sub, args.since, args.confirm_bars)
@@ -349,8 +371,8 @@ def main(argv=None):
                 if "已确认" in r["status"]:
                     n_conf += 1
 
-    print("\n触发摘要：%d/%d 个失效价位已触发，其中 %d 个已过确认窗口。"
-          % (n_trig, n_levels, n_conf))
+    print("\n触发摘要：价位数 %d；判定分支 %d，其中 %d 个已触发，%d 个已确认；方向待确认 %d。"
+          % (n_levels, n_branches, n_trig, n_conf, n_unknown))
     if any(lv.get("direction") is None for lv in levels):
         print("注：标注「方向待确认」的价位已按 break-down / break-up 各查一次（双向或零命中关键词，"
               "脚本不猜方向以免漏检）；请人工判定方向后按 05 第 2.3 节处理。")
