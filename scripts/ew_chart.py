@@ -86,6 +86,13 @@ _BOTTOM_ROW_H = 0.13
 _BOTTOM_FS = 13
 _BOTTOM_ROW_IN = 0.35
 
+# 主图 Y 轴视口（不变量：辅助外推线不得撑大基础坐标轴，否则 K 线被压成扁条）：
+#   _VIEWPORT_PAD_RATIO          —— K 线区间上下各留的视觉缓冲（占区间跨度的比例）
+#   _VIEWPORT_LEVEL_WINDOW_RATIO —— 参考位（失效位/关键位）并入视口的窗口：
+#                                  K 线区间外扩 span 的倍数；窗口外只画线不参与定界
+_VIEWPORT_PAD_RATIO = 0.08
+_VIEWPORT_LEVEL_WINDOW_RATIO = 0.5
+
 _CJK_FONTS = ["Microsoft YaHei", "SimHei", "SimSun", "Noto Sans CJK SC"]
 _found = None
 for _fname in _CJK_FONTS:
@@ -406,6 +413,18 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
             ax.plot([a, x_end], [p0, y_end], color=t["gann"], linestyle=ls,
                     linewidth=lw, alpha=0.9, zorder=5)
 
+    # 4) Y 轴视口锁定：放在所有绘图动作之后，禁止后画元素（江恩扇形/平行通道等外推线）
+    #    靠 autoscale 撑大坐标轴。外推线按每根 K 线的价格刻度几何外延，长周期下会远出
+    #    股价区间，只应被视口裁切（clip_on 默认生效），不得反客为主压缩 K 线。
+    viewport = _price_viewport(plot_df, current_price, levels, invalids)
+    if viewport is None:
+        print("[视口] K 线价格全部非正，跳过 Y 轴锁定", file=sys.stderr)
+    else:
+        y_min, y_max, clipped = viewport
+        ax.set_ylim(y_min, y_max)
+        for price, label in clipped:
+            print(f"[视口] {label} {_fmt_price(price)} 超出 Y 轴范围，已裁切", file=sys.stderr)
+
     # 不用 tight_layout（与 gridspec 冲突会挤掉 x 轴日期），改用 subplots_adjust 留边；
     # 底边距按英寸换算（画布高度已随底部行数自适应，固定分数会在高画布上留白过多）
     fig.subplots_adjust(left=0.05, right=0.985, top=1 - 0.62 / fig_h,
@@ -419,6 +438,39 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
     if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
         raise RuntimeError(f"图片保存失败或为空: {out_path}")
     print(f"[OK] 已保存: {out_path} ({os.path.getsize(out_path)} bytes)")
+
+
+def _price_viewport(plot_df, current_price=None, levels=None, invalids=None):
+    """计算主图 Y 轴视口 (y_min, y_max, clipped)，以 K 线真实极值 + 邻近参考位为准。
+
+    clipped 为落在视口窗口外、未参与定界的参考位 [(price, label), ...]，由调用方
+    提示"已裁切"（这些线仍会画，只是被坐标轴裁掉，其数值在底部图例块中保留）。
+
+    非正价格行（历史脏数据 O/H/L=0）不参与定界；全部非正时返回 None，
+    交回 matplotlib 自动缩放并告警。
+    """
+    valid = plot_df[(plot_df["low"] > 0) & (plot_df["high"] > 0)]
+    if valid.empty or not (valid["low"].min() > 0 and valid["high"].max() > 0):
+        return None
+
+    floor = valid["low"].min()
+    ceil = valid["high"].max()
+    span = (ceil - floor) or max(ceil * 0.02, 0.01)
+
+    window_lo = floor - span * _VIEWPORT_LEVEL_WINDOW_RATIO
+    window_hi = ceil + span * _VIEWPORT_LEVEL_WINDOW_RATIO
+    core = [floor, ceil]
+    if current_price is not None:
+        core.append(current_price)
+    clipped = []
+    for price, label in list(levels or []) + list(invalids or []):
+        if window_lo <= price <= window_hi:
+            core.append(price)
+        else:
+            clipped.append((price, label))
+
+    pad = span * _VIEWPORT_PAD_RATIO
+    return min(core) - pad, max(core) + pad, clipped
 
 
 def _geom_selfcheck(label_seq, pts):

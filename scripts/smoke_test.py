@@ -9,6 +9,7 @@
    坏数据 CSV（high<low、日期乱序）验证数据自检拦截（应报错退出，workflow 1.5 口径）；
 2. ew_chart.py —— 绘制 2 张标准图（每方案一张全景，见 naming.CHART_VIEWS；中文标题、浪段方向 auto/显式、失效价位、
    江恩 --gann-auto-scale 自动刻度、--path 连续浪路径），验证 PNG 非空生成；
+   2d 另测 Y 轴视口锁定：陡刻度江恩/价外参考位只被裁切，不得撑大坐标轴；
 3. embed_report_images.py —— 标准 2 图模式与单方案防御 1 图模式各建一个归档
    文件夹，跑内嵌与校验（含模板头部特征注释校验、替代方案图区"不适用"标记）；
 4. score.py —— 八因子加权排序与共振标签；
@@ -241,6 +242,30 @@ def main(argv=None):
                           "--csv", csv_path, "--out", os.path.join(chart_dir, "非法后缀.png"),
                           "--title", "非法峰谷后缀", "--path", "1@0:foo,2@60"])
     check("非法峰谷后缀被拒绝(exit!=0)", code != 0, (out + err).strip()[:200])
+
+    # ---- 2d. ew_chart Y 轴视口锁定：外推辅助线不得撑大坐标轴 ----
+    print("== 2d. ew_chart 视口锁定（江恩/通道等外推线只裁切、不撑轴）==")
+    import ew_chart as _ew
+    vdf = pd.DataFrame({"low": [60.0, 0.0, 62.0], "high": [108.0, 0.0, 109.0]})
+    vy = _ew._price_viewport(vdf, current_price=None,
+                             levels=[(105.0, "关键位")], invalids=[(300.0, "远目标")])
+    span = 109.0 - 60.0
+    want_lo, want_hi = 60.0 - span * _ew._VIEWPORT_PAD_RATIO, 109.0 + span * _ew._VIEWPORT_PAD_RATIO
+    check("视口=K线区间±8%（脏行 low=0 不参与定界）",
+          vy is not None and abs(vy[0] - want_lo) < 1e-6 and abs(vy[1] - want_hi) < 1e-6,
+          "" if vy is None else "得到 %s" % (vy[:2],))
+    check("窗口内参考位并入视口、窗口外参考位只裁切",
+          vy is not None and len(vy[2]) == 1 and vy[2][0][0] == 300.0,
+          "" if vy is None else "clipped=%s" % (vy[2],))
+    gann_png = os.path.join(chart_dir, "陡刻度江恩_全景.png")
+    code, out, err = run([sys.executable, os.path.join(HERE, "ew_chart.py"),
+                          "--csv", csv_path, "--out", gann_png, "--title", "陡刻度江恩",
+                          "--invalid", "9999:远目标(价外)",
+                          "--gann", "10:110:20:up"])
+    check("陡刻度江恩不撑爆 Y 轴（远目标被裁切且仍出图）",
+          code == 0 and os.path.getsize(gann_png) > 0
+          and "已裁切" in err and "9999" in err,
+          (err.strip() or out.strip())[:300])
 
     # ---- 3. embed_report_images.py：2 图标准模式 + 1 图防御模式 ----
     print("== 3. embed_report_images.py（2 图标准模式 + 1 图防御模式）==")
