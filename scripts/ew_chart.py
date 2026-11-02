@@ -474,20 +474,26 @@ def _price_viewport(plot_df, current_price=None, levels=None, invalids=None):
 
 
 def _geom_selfcheck(label_seq, pts):
-    """几何自检（P1-4 ②）：推动浪 1-2-3-4-5 端点须严格交替，且第 4 浪不得进入第 1 浪
-    价格区域（R7）。端点价取自 K 线极值（R20），故此处校验"选对段/选对端点"，
-    而非价格是否等于极值（后者由构造保证）。返回告警文案或 None。"""
-    if label_seq[:5] != ["1", "2", "3", "4", "5"] or len(pts) < 5:
+    """检查正式六点 0-1-2-3-4-5 路径及旧五点调试路径的交替性与 R7。
+
+    端点价取自 K 线极值（R20）；第 4 浪触及第 1 浪终点也算重叠。
+    返回告警文案或 None。"""
+    if label_seq[:6] == ["0", "1", "2", "3", "4", "5"] and len(pts) >= 6:
+        ys = [p[1] for p in pts[1:6]]
+    elif label_seq[:5] == ["1", "2", "3", "4", "5"] and len(pts) >= 5:
+        ys = [p[1] for p in pts[:5]]
+    else:
         return None
-    ys = [p[1] for p in pts[:5]]
-    dirs = [ys[i + 1] > ys[i] for i in range(4)]
+    w1, w2, w3, w4, w5 = ys
+    wave_points = [w1, w2, w3, w4, w5]
+    dirs = [wave_points[i + 1] > wave_points[i] for i in range(4)]
     if not (dirs[0] != dirs[1] and dirs[1] != dirs[2] and dirs[2] != dirs[3]):
         return "1-2-3-4-5 端点未严格交替（降-升-降-升 或反向），疑似端点选取错误"
-    up = ys[2] > ys[0]          # 第 3 浪终点高于第 1 浪终点 → 上行推动
-    if up and ys[3] < ys[0]:
-        return "R7 重叠：第 4 浪端点 %.3f 低于第 1 浪终点 %.3f" % (ys[3], ys[0])
-    if (not up) and ys[3] > ys[0]:
-        return "R7 重叠：第 4 浪端点 %.3f 高于第 1 浪终点 %.3f" % (ys[3], ys[0])
+    up = w3 > w1
+    if up and w4 <= w1:
+        return "R7 重叠：第 4 浪端点 %.3f 低于或触及第 1 浪终点 %.3f" % (w4, w1)
+    if (not up) and w4 >= w1:
+        return "R7 重叠：第 4 浪端点 %.3f 高于或触及第 1 浪终点 %.3f" % (w4, w1)
     return None
 
 

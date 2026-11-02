@@ -285,9 +285,10 @@ def check_level(df, lv, since=None, confirm_bars=2):
                 "first_touch": dates[touch], "confirmed": dates[touch], "run": 0, "dist": dist}
 
     # 触及后逐根扫描：streak = 当前连续未收回根数；streak 首次达到 confirm_bars
-    # 的那根即确认日（确认后 streak 只表示当前尾段，不再影响判定）
+    # 的那根即确认日（确认后 streak 只表示当前尾段，不再影响判定）。
+    # 等值仍在外侧，只有严格回到价位另一方才算收回（与文件头 D29 口径一致）。
     def recovered(c):
-        return c >= price if down else c <= price
+        return c > price if down else c < price
 
     confirm_idx = None
     streak = 0

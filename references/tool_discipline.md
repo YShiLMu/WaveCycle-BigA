@@ -75,7 +75,7 @@
 
 `wave_facts.py --csv <行情CSV> --data <候选JSON> --out <系统临时目录内绝对路径/facts.json>` 默认只打印异常与缺证摘要；完整结果供脚本读取。`--format json`只在需要完整数据时使用，禁止把完整JSON和摘要重复加载。`--scheme <方案名> --path <浪路径>`展开局部明细，退出码仍检查全部方案。默认每方案最多列20条问题，优先列违反项并披露省略数量；按路径展开时不截断该局部。
 
-候选JSON顶层键：`version:1`、`as_of:"YYYY-MM-DD"`（信息截止日）、`depth:2或3`、`schemes:[...]`。每个方案含`name`、`degree`、`groups`及可选`targets`。这里的depth只检查已选深度的覆盖，不替代D37/R35的用户确认与来源登记。
+候选JSON顶层键：`version:1`、`as_of:"YYYY-MM-DD"`（信息截止日）、`depth:3或4`、`schemes:[...]`；`depth:2`仅兼容旧局部机械输入，不能进入新正式报告。每个方案含`name`、`degree`、`groups`及可选`targets`。这里的depth只检查已选深度的覆盖，不替代D37/R35的用户确认与来源登记。
 
 每组含：`path`（根组为空串，子组为父浪路径如`1`、`1-3`）、`pattern`、`completed`（明确布尔值）、`k`（正整数，省略为3）、`points`（按时间顺序）。每点含`label`、`index`、`kind`（H/L）；起点标签固定`0`，后续每个浪终点还须明确`completed`。索引从0起，指向原CSV数据行；不填price，脚本取high/low。各层可使用不同k，但须登记；端点确认只使用截止日内数据，不用后来数据回填。
 

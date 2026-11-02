@@ -5,7 +5,7 @@
 
 > **定位**：本文件是"规则冲突与形态边界归属"的**唯一权威裁决流程**。数浪（`references/workflow.md（第 2 步）`）、验证（`references/workflow.md（第 3 步）`）、更新（`references/workflow.md（第 5 步）`）遇到 Rule 与 Rule、Rule 与 Guideline、Guideline 与 Guideline 的冲突，或形态边界归属不清时，按本文裁决。它不属于任何一个工作流步骤（工作流 01–05 各承载本步骤执行细则），故属跨步骤知识。
 >
-> **只裁决、不重复条文**：本文只写"冲突怎么裁决、按什么顺序裁决"，不重复展开规则条文。条文唯一权威在 `references/rules.md`（R1–R30）与 `references/guidelines.md`（G1–G27）；形态结构细节见 `references/patterns.md（推动浪）`、`references/patterns.md（楔形）`、`references/patterns.md（调整浪）`、`references/patterns.md（三角形）`；数据问题按 `references/data.md` 处理，不进入本裁决流程。
+> **只裁决、不重复条文**：本文只写"冲突怎么裁决、按什么顺序裁决"，不重复展开规则条文。条文唯一权威在 `references/rules.md`（R1–R35）与 `references/guidelines.md`（G1–G29）；形态结构细节见 `references/patterns.md（推动浪）`、`references/patterns.md（楔形）`、`references/patterns.md（调整浪）`、`references/patterns.md（三角形）`；数据问题按 `references/data.md` 处理，不进入本裁决流程。
 >
 
 ## 1. 裁决总原则

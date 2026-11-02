@@ -95,10 +95,11 @@ def detect_swing_levels(df, k=3, tol=0.001, min_gap=3):
             seeds.append({"center": float(lows[i]), "date": dates[i], "direction": "支撑"})
     out = []
     for cl in cluster_levels(seeds, tol):
-        if cl["direction"] == "压力":
-            mask = highs >= cl["center"] * (1 - tol)
-        else:
-            mask = lows <= cl["center"] * (1 + tol)
+        # K 线 [low, high] 与价位容差带相交才算触及：突破后远离价位不算，
+        # 单根长 K 线跨过整个容差带仍算一次有效穿越。
+        lower = cl["center"] * (1 - tol)
+        upper = cl["center"] * (1 + tol)
+        mask = (highs >= lower) & (lows <= upper)
         # 一次接近事件 = 一次触及：连续满足的 K 线合并，离开后再回来才算新触及
         events = [i for i, m in enumerate(mask) if m and (i == 0 or not mask[i - 1])]
         touches = []
@@ -192,14 +193,14 @@ def detect_horizontal_levels(df, shadow_ratio=2.0, window=250, mode="both", tol=
         upper = highs[i] - max(opens[i], closes[i])   # 上影线
         lower = min(opens[i], closes[i]) - lows[i]    # 下影线
 
-        # 压力位候选：长上影线，顶端 = 最高价，后续收盘未破
-        if mode in ("both", "压力") and upper >= body * shadow_ratio:
+        # 压力位候选：长上影线，顶端 = 最高价，后续收盘未破；零影线不算长影线。
+        if mode in ("both", "压力") and upper > 0 and upper >= body * shadow_ratio:
             tip = highs[i]
             if all(closes[j] < tip for j in range(i + 1, n)):
                 levels.append({"center": float(tip), "date": dates[i],
                                "direction": "压力", "kind": "长上影顶端"})
-        # 支撑位候选（对称）：长下影线，底端 = 最低价，后续收盘未破
-        if mode in ("both", "支撑") and lower >= body * shadow_ratio:
+        # 支撑位候选（对称）：长下影线，底端 = 最低价，后续收盘未破；零影线不算长影线。
+        if mode in ("both", "支撑") and lower > 0 and lower >= body * shadow_ratio:
             tip = lows[i]
             if all(closes[j] > tip for j in range(i + 1, n)):
                 levels.append({"center": float(tip), "date": dates[i],
