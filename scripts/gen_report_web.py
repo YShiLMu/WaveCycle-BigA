@@ -79,8 +79,9 @@ def main():
         fail("网页渲染后存在未替换字段: %s" % "、".join(sorted(bad_residual)))
     if "波浪理论网页报告模板" not in html:
         fail("网页模板特征注释缺失，渲染源可能不是 assets/网页报告_web_report.html")
-    if html.count('class="pano-img"') != 2:
-        fail("网页 pano-img 结构数应为 2（主/替代全景），实际 %d" % html.count('class="pano-img"'))
+    if html.count('class="pano-img"') != len(IMAGE_PLACEHOLDERS):
+        fail("网页 pano-img 结构数应为 %d（主/替代 × 全景/60m/30m/15m），实际 %d"
+             % (len(IMAGE_PLACEHOLDERS), html.count('class="pano-img"')))
 
     print("[OK] 网页渲染完成（剩余图片占位符 %d 个，待 embed_report_images.py 注入），输出重定向到标准文件名："
           % len(residual - IMAGE_PLACEHOLDERS), file=sys.stderr)

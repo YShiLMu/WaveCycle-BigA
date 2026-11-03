@@ -36,6 +36,7 @@
 - **`score.py`**：`-h` `--scheme`
 - **`wave_facts.py`**：`-h` `--csv` `--data` `--out` `--format` `--scheme` `--path`
 - **`target_calc.py`**：`-h` `--start` `--end` `--kind` `--anchor` `--direction` `--ratio` `--format`
+- **`minute_slice.py`**：`-h` `--code` `--freq` `--anchor-date` `--anchor-ts` `--anchor-kind` `--daily-csv` `--k` `--out-dir`
 <!-- CLI-PARAM-TABLE-END -->
 
 ## 3. 输出读取纪律
@@ -68,6 +69,7 @@
 - **第三层线 = 橙色；第四层线 = 黄绿色**：默认深色图第四层用亮黄绿 `#B8F000`，浅色图用深黄绿 `#4D7C0F`；第四层实线、未完成虚线、箭头与图例共用独立层级色，不复用K线颜色。
 - **`--waves` 不作白/绿分层**：此参数仅用于无scope的工具调试，其up/down方向色（青／蓝）不承担首层白／次层绿约定；正式图各层一律用已绑定scope的`--path`，已采用历史段实线；未完成段由scope生成层级色虚线。
 - **候选与进行中段画法**：方案采用的历史段（含完成候选）实线；启动候选与进行中段用层级色虚线。线型不代表完成或归属确认，证据状态另留Markdown。未完成仅列观察点与截止日，禁止预标未发生的第4/5子浪或完整内部结构（references/rules.md R34、09 D39）。
+- **分钟图型（60m/30m/15m，分钟分形层）**：用 `ew_chart.py --out-auto "<图表目录>|<方案>|60m"`（图型∈{全景,60m,30m,15m}，naming.py 为命名权威）出图；**分钟图型免 `--scope-file`（分钟层不进 analysis_scope），浪标签用 `--path`，端点索引来自 `minute_slice.py` 分钟切片 CSV 上 `swings.py` 的摆动点定位**；全景图型仍强制绑定 scope。分钟图组与日线全景同组交付（标准 8 张/防御 4 张/未启用分钟层 2 张，缺张 embed 判错），未启用分钟分形层时分钟图位由 embed 替换为降级说明。
 
 ## 7. 候选事实批量入口（wave_facts / target_calc）
 

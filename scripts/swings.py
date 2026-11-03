@@ -65,19 +65,34 @@ def load_ohlc(path):
 
 
 def normalize_date(d):
-    """兼容 2026-08-28 / 20260828 两种日期写法 → YYYY-MM-DD。"""
+    """兼容 2026-08-28 / 20260828 / 2026-08-28 10:30 / 202608281030 → 规范日期/时刻写法。"""
     d = str(d).strip()
-    if len(d) == 8 and d.isdigit():
-        return "%s-%s-%s" % (d[:4], d[4:6], d[6:8])
+    if d.isdigit():
+        if len(d) == 8:
+            return "%s-%s-%s" % (d[:4], d[4:6], d[6:8])
+        if len(d) == 12:  # 分钟级紧凑写法 YYYYMMDDHHMM
+            return "%s-%s-%s %s:%s" % (d[:4], d[4:6], d[6:8], d[8:10], d[10:12])
     return d
 
 
+def has_clock(date_str):
+    """是否带时刻（分钟级数据为 'YYYY-MM-DD HH:MM'）。"""
+    return " " in str(date_str).strip() or "T" in str(date_str).strip()
+
+
 def _normdate(x):
-    """统一 20260828 / 2026-08-28 → date 对象（用于与 out 日期匹配，兼容 CSV YYYYMMDD 列）。"""
-    s = str(x).strip()
-    if len(s) == 8 and s.isdigit():
-        return datetime.date(int(s[:4]), int(s[4:6]), int(s[6:8]))
+    """统一日期写法 → date/datetime（带时刻返回 datetime，供精确匹配）。"""
+    s = normalize_date(x)
+    if has_clock(s):
+        return datetime.datetime.strptime(s, "%Y-%m-%d %H:%M")
     return datetime.date.fromisoformat(s)
+
+
+def match_point_date(row_date, query):
+    """--path 端点匹配：query 带时刻须全时间戳相等；仅日期则按日匹配（同日多根分钟 bar 均视为当日）。"""
+    if has_clock(query):
+        return normalize_date(row_date) == normalize_date(query)
+    return normalize_date(row_date)[:10] == normalize_date(query)
 
 
 def to_week_key(date_str):
@@ -271,8 +286,10 @@ def main(argv=None):
     p.add_argument("--csv", required=True, help="OHLC CSV（date,open,high,low,close[,volume]）")
     p.add_argument("--k", type=int, default=5,
                    help="分形窗口（左右各 k 根，默认 5；周线建议 4，日线粗结构 7–8）")
-    p.add_argument("--start", default=None, help="分析起始日期 YYYY-MM-DD（索引基准不变）")
-    p.add_argument("--end", default=None, help="分析结束日期 YYYY-MM-DD")
+    p.add_argument("--start", default=None,
+                   help="分析起始日期 YYYY-MM-DD（分钟数据可带时刻 'YYYY-MM-DD HH:MM'；索引基准不变）")
+    p.add_argument("--end", default=None,
+                   help="分析截止日期/时刻；分钟数据下日期-only 语义为含当天全部 bar")
     p.add_argument("--weekly", action="store_true",
                    help="先聚合为周 K 再取摆动（道氏主要趋势口径）；"
                         "--chart-args 输出的索引仍是日线 CSV 行索引")
@@ -283,7 +300,8 @@ def main(argv=None):
                    help="只输出最近 N 个摆动点（表与参数串均生效）")
     p.add_argument("--path", default=None, metavar="标签@日期,...",
                    help="把选定的浪端点(标签@日期)转成 ew_chart --path 索引串：按日期在摆动点中定位"
-                        "(须为 swings 含影线极值，R20)，校验索引严格递增，首点即起画点(ew_chart --start)；"
+                        "(须为 swings 含影线极值，R20；分钟级端点须带时刻精确匹配 'YYYY-MM-DD HH:MM')，"
+                        "校验索引严格递增，首点即起画点(ew_chart --start)；"
                         "索引由脚本定，禁止手填。例：--path \"1@2024-02-06,2@2026-06-30\"")
     p.add_argument("--dow", action="store_true",
                    help="输出道氏趋势状态读数（D30：最近 3 高/3 低、D11 显著筛、"
@@ -302,6 +320,9 @@ def main(argv=None):
 
     rows, has_volume = load_ohlc(args.csv)
     rows = [(normalize_date(r[0]), *r[1:]) for r in rows]
+    intraday = any(has_clock(r[0]) for r in rows)
+    if args.weekly and intraday:
+        raise SystemExit("[错误] 分钟级数据不支持 --weekly 周线聚合（道氏主要趋势判定请用日线 CSV）")
     lo_i = 0
     if args.start:
         s = normalize_date(args.start)
@@ -311,6 +332,8 @@ def main(argv=None):
     hi_i = len(rows)
     if args.end:
         e = normalize_date(args.end)
+        if intraday and not has_clock(e):
+            e += " 23:59"  # 分钟数据下日期-only 的 --end 语义为「含当天全部 bar」
         hi_i = next((i for i, r in enumerate(rows) if r[0] > e), len(rows))
         if hi_i <= lo_i:
             raise SystemExit("[错误] --end 早于 --start 范围")
@@ -344,7 +367,7 @@ def main(argv=None):
         tail_dropped = max(0, len(out) - args.tail)
         out = out[-args.tail:]
 
-    mode = "周线聚合（摆动=周内极端价所在交易日）" if args.weekly else "日线"
+    mode = "周线聚合（摆动=周内极端价所在交易日）" if args.weekly else ("分钟" if intraday else "日线")
     print("== 摆动点（k=%d，%s，共 %d 个；索引=CSV 绝对行号，R20 含影线口径）=="
           % (args.k, mode, len(out)))
     prev = None
@@ -383,7 +406,7 @@ def main(argv=None):
                 raise SystemExit("[错误] --path 每条应为 标签@日期，收到: %s" % tok)
             label, d = tok.split("@", 1)
             d = normalize_date(d)
-            hit = next((o for o in out if _normdate(o[1]) == _normdate(d)), None)
+            hit = next((o for o in out if match_point_date(o[1], d)), None)
             if hit is None:
                 raise SystemExit("[错误] 日期 %s 不在摆动点中（端点须为 swings 含影线极值，R20）：%s"
                                  % (d, label))

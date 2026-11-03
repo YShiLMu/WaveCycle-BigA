@@ -6,11 +6,22 @@ smoke_test 共用；各脚本禁止再另写文件名名单、占位符名单或
 """
 import re
 
-# 2 张标准浪型图（embed_report_images 定位图表/ 目录用；ew_chart --out-auto 同源）
-IMAGE_KEYS = (
+# 标准浪型图清单（embed_report_images 定位图表/ 目录用；ew_chart --out-auto 同源）。
+# 日线全景 2 张为必备核心（单方案防御模式仅主方案）；分钟分形层 6 张成组可选
+# （启用分钟分形层时随方案各出 60m/30m/15m 三张，未启用时图位标注"未启用分钟分形层"）。
+DAILY_IMAGE_KEYS = (
     ("主方案全景", "主方案_全景.png"),
     ("替代方案全景", "替代方案_全景.png"),
 )
+MINUTE_IMAGE_KEYS = (
+    ("主方案60m", "主方案_60m.png"),
+    ("主方案30m", "主方案_30m.png"),
+    ("主方案15m", "主方案_15m.png"),
+    ("替代方案60m", "替代方案_60m.png"),
+    ("替代方案30m", "替代方案_30m.png"),
+    ("替代方案15m", "替代方案_15m.png"),
+)
+IMAGE_KEYS = DAILY_IMAGE_KEYS + MINUTE_IMAGE_KEYS
 IMAGE_FILENAMES = tuple(fn for _key, fn in IMAGE_KEYS)
 # md 图片引用列表（带 图表/ 目录前缀；embed_report_images 与 md 自包含校验用）
 CHART_IMAGE_PATHS = tuple("图表/" + fn for fn in IMAGE_FILENAMES)
@@ -19,9 +30,10 @@ CHART_IMAGE_PATHS = tuple("图表/" + fn for fn in IMAGE_FILENAMES)
 HTML_TOKENS = {key: "{{%s图路径}}" % key for key, _fn in IMAGE_KEYS}
 IMAGE_PLACEHOLDERS = {token.strip("{}") for token in HTML_TOKENS.values()}
 
-# ew_chart --out-auto 的方案与图型取值（每方案一张全景图，无放大图）
+# ew_chart --out-auto 的方案与图型取值（日线全景绑定 scope；分钟图型免 scope，浪标签走 --path）
 SCHEME_NAMES = ("主方案", "替代方案")
-CHART_VIEWS = ("全景",)
+CHART_VIEWS = ("全景", "60m", "30m", "15m")
+MINUTE_VIEWS = ("60m", "30m", "15m")
 
 # 交付文档名模板（init_archive 创建、gen_report_md/gen_report_web 打印）
 REPORT_MD_TPL = "分析报告_%s_%s_%s.md"

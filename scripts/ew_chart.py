@@ -47,7 +47,7 @@ from matplotlib.patches import Rectangle
 from matplotlib import font_manager
 
 from ohlc_io import load_ohlc
-from naming import CHART_VIEWS, SCHEME_NAMES, chart_png
+from naming import CHART_VIEWS, MINUTE_VIEWS, SCHEME_NAMES, chart_png
 from analysis_scope import check_chart, validate_scope, pending_chart_segments, display_path
 
 # ---------------------------------------------------------------------------
@@ -113,6 +113,15 @@ def _fmt_price(v):
     if abs(v - round(v)) < 1e-9:
         return f"{v:.0f}"
     return f"{v:.2f}"
+
+
+def _fmt_axis(ts):
+    """坐标与标注的时间格式：分钟级保留时刻（MM-DD HH:MM），日级保持 YYYY-MM-DD。
+    scope 绑定逻辑（data_start/data_end 比较、check_chart）不经过本函数，仍用日期口径。"""
+    ts = pd.Timestamp(ts)
+    if ts.hour or ts.minute or ts.second:
+        return ts.strftime("%m-%d %H:%M")
+    return ts.strftime("%Y-%m-%d")
 
 
 def _label_level(lb):
@@ -204,7 +213,7 @@ def _draw_candles(ax, df, last_n=None, t=THEMES["dark"]):
     # 时间刻度：稀疏显示，避免重叠；横排（rotation=0），标签放 X 轴下方
     ticks = list(range(0, len(df), max(1, len(df) // 6)))
     ax.set_xticks(ticks)
-    ax.set_xticklabels([df.index[i].strftime("%Y-%m-%d") for i in ticks],
+    ax.set_xticklabels([_fmt_axis(df.index[i]) for i in ticks],
                        rotation=0, ha="center", fontsize=10, va="top")
 
 
@@ -313,7 +322,7 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
         )
         # 旧 waves 也把文字移到底部（不在 K 线上标注）；收集子浪端点
         if label:
-            date_s = plot_df.index[e].strftime("%Y-%m-%d")
+            date_s = _fmt_axis(plot_df.index[e])
             sub_rows.append((label, _fmt_price(ye), date_s, e))
 
     # 1b) 推动浪平行通道（深色下亮青）：只画轨道线，不标文字
@@ -384,11 +393,11 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
             rp = plot_df.iloc[gip]
             is_peak = kind == "peak"
             yv = rp["high"] if is_peak else rp["low"]
-            ds = plot_df.index[gip].strftime("%Y-%m-%d")
+            ds = _fmt_axis(plot_df.index[gip])
             big_seq.append((big, _fmt_price(yv), ds))
     if current_price is not None:
         sub_groups.setdefault(1, []).append(("当前", _fmt_price(current_price),
-                                             plot_df.index[-1].strftime("%Y-%m-%d")))
+                                             _fmt_axis(plot_df.index[-1])))
     # 浪型区：大级别块 + 逐级子浪块（多列并排，第一行 y 统一 _BOTTOM_Y0）
     _draw_wave_legend(ax_waves, big_seq, sub_groups, t, fs, row_h=row_h)
 
@@ -545,7 +554,7 @@ def _draw_paths(ax, plot_df, base, paths, t, fs):
             label_seq.append(lbl)
             # 收集子浪端点（仅非空标签；空标签=更大级别/当前，由 pivot 或底部区处理）
             if lbl != "":
-                date_s = plot_df.index[gi].strftime("%Y-%m-%d")
+                date_s = _fmt_axis(plot_df.index[gi])
                 sub_rows.append((lbl, _fmt_price(y), date_s, gi))
         xs = [p[0] for p in pts]
         ys = [p[1] for p in pts]
@@ -987,7 +996,7 @@ def main():
             p.error("--out 与 --out-auto 只能二选一")
         parts = args.out_auto.split("|")
         if len(parts) != 3 or parts[1] not in SCHEME_NAMES or parts[2] not in CHART_VIEWS:
-            p.error('--out-auto 格式应为 "目录|主方案|全景"（方案∈{主方案,替代方案}，图型∈{全景}——每方案一张全景图），'
+            p.error('--out-auto 格式应为 "目录|主方案|全景"（方案∈{主方案,替代方案}，图型∈{全景,60m,30m,15m}），'
                     "收到: %s" % args.out_auto)
         out_path = os.path.join(parts[0], chart_png(parts[1], parts[2]))
     elif args.out:
@@ -1001,8 +1010,11 @@ def main():
     pending = []
     scheme_name = args.scheme
     if args.out_auto:
-        if not args.scope_file:
+        if parts[2] == "全景" and not args.scope_file:
             p.error("正式全景图--out-auto必须传--scope-file，先建立第一层框架与逐浪覆盖")
+        if parts[2] in MINUTE_VIEWS and args.scope_file:
+            p.error("分钟图型（60m/30m/15m）不绑定 scope：浪标签用 --path"
+                    "（swings 分钟切片摆动点定位，分钟层不进 analysis_scope）")
         if scheme_name and scheme_name != parts[1]:
             p.error("--scheme与--out-auto方案不一致")
         scheme_name = parts[1]

@@ -9,7 +9,9 @@
   使用方式：复制本文件由 gen_report_web.py 渲染——data.json 提供结构化数据（文本字段直接替换；
   {{表名}} 占位符由脚本按固定列头生成表格行——AI 只给纯数据，不写 HTML/表格）。
   图区图片由 embed_report_images.py 注入 base64；禁止从零重写 HTML 结构与 JS。
-  变更：去放大图，每方案一张全景（主/替代）；图位固定在「3 替代方案 → 4 概率排序」之间。
+  变更：主/替代方案改选项卡呈现（max-height 视口 + 粘性表头，浪表行数不定内部滚动）；
+  图区 8 按钮（主/替代 × 日线全景/60min/30min/15min），图位固定在「数浪方案 → 4 概率排序」之间；
+  分钟图未启用时对应图位由 embed_report_images.py 替换为「未启用分钟分形层」说明。
   引用规范：见 references/rules.md R19/R20/R22/R23/R24、references/guidelines.md G21；术语与规则不得在此重新定义。
 -->
 <style>
@@ -27,12 +29,16 @@
        padding-left: 10px; margin-bottom: 8px; }
   h3 { font-size: .95rem; color: #444; margin: 10px 0 4px; }
   p { margin: 6px 0; }
-  .tabs { display: flex; gap: 8px; margin-bottom: 8px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
   .tab-btn { padding: 5px 16px; border: 1px solid var(--line); border-radius: 6px;
              background: #fff; cursor: pointer; font-size: .9rem; }
   .tab-btn.active { background: var(--main); color: #fff; border-color: var(--main); }
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
+  /* 主/替代方案选项卡：max-height 视口 + 粘性表头，浪表行数不定（10~15+ 行）时
+     内部滚动、页面不大幅跳动；短表自然收缩不留白 */
+  .wave-scroll { max-height: 560px; overflow-y: auto; border-radius: 6px; }
+  .wave-scroll thead th { position: sticky; top: 0; background: #eef3f8; z-index: 2; }
   .toolbar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 6px; }
   .toolbar span, .toolbar button { background: #fff; border: 1px solid var(--line);
                                    border-radius: 6px; padding: 2px 8px; font-size: .8rem; }
@@ -50,6 +56,11 @@
           color: #666; background: rgba(255,255,255,.9); border-radius: 6px; padding: 2px 8px; }
   .img-missing { display: none; padding: 40px 12px; border: 2px dashed var(--accent);
                  border-radius: 8px; color: var(--accent); text-align: center; }
+  /* 图位降级说明（未启用分钟分形层 / 单方案防御未出图）：embed 把 <img> 换成 .img-note */
+  .img-note { padding: 28px 12px; margin: 12px; border: 1px dashed var(--line);
+              border-radius: 8px; color: #888; text-align: center; font-size: .88rem; }
+  .viewport:has(.img-note) { min-height: 0; height: auto !important; cursor: default; }
+  .viewport:has(.img-note) .hint { display: none; }
   table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: .9rem; }
   th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
   th { background: #eef3f8; }
@@ -83,23 +94,40 @@
     {{网页分析前提}}
   </section>
 
-  <section><h2>2. 主方案</h2>
-    {{网页主方案}}
-  </section>
-
-  <section><h2>3. 替代方案</h2>
-    {{网页替代方案}}
+  <section>
+    <div class="tabs">
+      <button class="tab-btn active" onclick="activateTab('scheme', 'scheme-main', this)">主方案</button>
+      <button class="tab-btn" onclick="activateTab('scheme', 'scheme-alt', this)">替代方案</button>
+    </div>
+    <div id="scheme-main" data-tab-group="scheme" class="tab-panel active">
+      <h2>2. 主方案</h2>
+      <div class="wave-scroll">
+      {{网页主方案}}
+      </div>
+    </div>
+    <div id="scheme-alt" data-tab-group="scheme" class="tab-panel">
+      <h2>3. 替代方案</h2>
+      <div class="wave-scroll">
+      {{网页替代方案}}
+      </div>
+    </div>
   </section>
 
   <section>
     <h2>浪型标注图</h2>
     <div class="tabs">
-      <button class="tab-btn active" onclick="showTab('main', this)">主方案</button>
-      <button class="tab-btn" onclick="showTab('alt', this)">替代方案</button>
+      <button class="tab-btn active" onclick="activateTab('chart', 'chart-main-pano', this)">主方案日线</button>
+      <button class="tab-btn" onclick="activateTab('chart', 'chart-main-m60', this)">主方案60min</button>
+      <button class="tab-btn" onclick="activateTab('chart', 'chart-main-m30', this)">主方案30min</button>
+      <button class="tab-btn" onclick="activateTab('chart', 'chart-main-m15', this)">主方案15min</button>
+      <button class="tab-btn" onclick="activateTab('chart', 'chart-alt-pano', this)">替代方案日线</button>
+      <button class="tab-btn" onclick="activateTab('chart', 'chart-alt-m60', this)">替代方案60min</button>
+      <button class="tab-btn" onclick="activateTab('chart', 'chart-alt-m30', this)">替代方案30min</button>
+      <button class="tab-btn" onclick="activateTab('chart', 'chart-alt-m15', this)">替代方案15min</button>
     </div>
-    <div id="panel-main" class="tab-panel active">
-      <h3>全景图（大级别结构，从 1 浪起）——滚轮缩放可看子浪</h3>
-      <div class="toolbar" id="toolbar-main-pano">
+    <div id="chart-main-pano" data-tab-group="chart" class="tab-panel active">
+      <h3>主方案 · 日线全景图（大级别结构，从 1 浪起）——滚轮缩放可看子浪</h3>
+      <div class="toolbar">
         <span class="zoom-label" id="zoom-label-main-pano">×1.0</span>
         <button type="button" onclick="changeSpeed('main-pano',-1)">−</button>
         <span class="speed-label" id="speed-label-main-pano">拖速×1</span>
@@ -111,9 +139,51 @@
       </div>
       <div class="hint">滚轮缩放 · 放大后可拖拽平移 · 双击复位</div></div>
     </div>
-    <div id="panel-alt" class="tab-panel">
-      <h3>全景图（替代方案，从 1 浪起）</h3>
-      <div class="toolbar" id="toolbar-alt-pano">
+    <div id="chart-main-m60" data-tab-group="chart" class="tab-panel">
+      <h3>主方案 · 60min（分钟分形层，T_d0 锚点切片）</h3>
+      <div class="toolbar">
+        <span class="zoom-label" id="zoom-label-main-m60">×1.0</span>
+        <button type="button" onclick="changeSpeed('main-m60',-1)">−</button>
+        <span class="speed-label" id="speed-label-main-m60">拖速×1</span>
+        <button type="button" onclick="changeSpeed('main-m60',1)">＋</button>
+        <button type="button" onclick="resetView('main-m60')">复位</button>
+      </div>
+      <div class="viewer"><div class="viewport" id="viewport-main-m60">
+        <img class="pano-img" data-scheme="主方案60m" draggable="false" src="{{主方案60m图路径}}" alt="主方案60m图">
+      </div>
+      <div class="hint">滚轮缩放 · 放大后可拖拽平移 · 双击复位</div></div>
+    </div>
+    <div id="chart-main-m30" data-tab-group="chart" class="tab-panel">
+      <h3>主方案 · 30min（分钟分形层，T_60m0 锚点切片）</h3>
+      <div class="toolbar">
+        <span class="zoom-label" id="zoom-label-main-m30">×1.0</span>
+        <button type="button" onclick="changeSpeed('main-m30',-1)">−</button>
+        <span class="speed-label" id="speed-label-main-m30">拖速×1</span>
+        <button type="button" onclick="changeSpeed('main-m30',1)">＋</button>
+        <button type="button" onclick="resetView('main-m30')">复位</button>
+      </div>
+      <div class="viewer"><div class="viewport" id="viewport-main-m30">
+        <img class="pano-img" data-scheme="主方案30m" draggable="false" src="{{主方案30m图路径}}" alt="主方案30m图">
+      </div>
+      <div class="hint">滚轮缩放 · 放大后可拖拽平移 · 双击复位</div></div>
+    </div>
+    <div id="chart-main-m15" data-tab-group="chart" class="tab-panel">
+      <h3>主方案 · 15min（分钟分形层，随 30m 摆动段对齐）</h3>
+      <div class="toolbar">
+        <span class="zoom-label" id="zoom-label-main-m15">×1.0</span>
+        <button type="button" onclick="changeSpeed('main-m15',-1)">−</button>
+        <span class="speed-label" id="speed-label-main-m15">拖速×1</span>
+        <button type="button" onclick="changeSpeed('main-m15',1)">＋</button>
+        <button type="button" onclick="resetView('main-m15')">复位</button>
+      </div>
+      <div class="viewer"><div class="viewport" id="viewport-main-m15">
+        <img class="pano-img" data-scheme="主方案15m" draggable="false" src="{{主方案15m图路径}}" alt="主方案15m图">
+      </div>
+      <div class="hint">滚轮缩放 · 放大后可拖拽平移 · 双击复位</div></div>
+    </div>
+    <div id="chart-alt-pano" data-tab-group="chart" class="tab-panel">
+      <h3>替代方案 · 日线全景图（从 1 浪起）</h3>
+      <div class="toolbar">
         <span class="zoom-label" id="zoom-label-alt-pano">×1.0</span>
         <button type="button" onclick="changeSpeed('alt-pano',-1)">−</button>
         <span class="speed-label" id="speed-label-alt-pano">拖速×1</span>
@@ -122,6 +192,48 @@
       </div>
       <div class="viewer"><div class="viewport" id="viewport-alt-pano">
         <img class="pano-img" data-scheme="替代方案" draggable="false" src="{{替代方案全景图路径}}" alt="替代方案全景图">
+      </div>
+      <div class="hint">滚轮缩放 · 放大后可拖拽平移 · 双击复位</div></div>
+    </div>
+    <div id="chart-alt-m60" data-tab-group="chart" class="tab-panel">
+      <h3>替代方案 · 60min（分钟分形层，T_d0 锚点切片）</h3>
+      <div class="toolbar">
+        <span class="zoom-label" id="zoom-label-alt-m60">×1.0</span>
+        <button type="button" onclick="changeSpeed('alt-m60',-1)">−</button>
+        <span class="speed-label" id="speed-label-alt-m60">拖速×1</span>
+        <button type="button" onclick="changeSpeed('alt-m60',1)">＋</button>
+        <button type="button" onclick="resetView('alt-m60')">复位</button>
+      </div>
+      <div class="viewer"><div class="viewport" id="viewport-alt-m60">
+        <img class="pano-img" data-scheme="替代方案60m" draggable="false" src="{{替代方案60m图路径}}" alt="替代方案60m图">
+      </div>
+      <div class="hint">滚轮缩放 · 放大后可拖拽平移 · 双击复位</div></div>
+    </div>
+    <div id="chart-alt-m30" data-tab-group="chart" class="tab-panel">
+      <h3>替代方案 · 30min（分钟分形层，T_60m0 锚点切片）</h3>
+      <div class="toolbar">
+        <span class="zoom-label" id="zoom-label-alt-m30">×1.0</span>
+        <button type="button" onclick="changeSpeed('alt-m30',-1)">−</button>
+        <span class="speed-label" id="speed-label-alt-m30">拖速×1</span>
+        <button type="button" onclick="changeSpeed('alt-m30',1)">＋</button>
+        <button type="button" onclick="resetView('alt-m30')">复位</button>
+      </div>
+      <div class="viewer"><div class="viewport" id="viewport-alt-m30">
+        <img class="pano-img" data-scheme="替代方案30m" draggable="false" src="{{替代方案30m图路径}}" alt="替代方案30m图">
+      </div>
+      <div class="hint">滚轮缩放 · 放大后可拖拽平移 · 双击复位</div></div>
+    </div>
+    <div id="chart-alt-m15" data-tab-group="chart" class="tab-panel">
+      <h3>替代方案 · 15min（分钟分形层，随 30m 摆动段对齐）</h3>
+      <div class="toolbar">
+        <span class="zoom-label" id="zoom-label-alt-m15">×1.0</span>
+        <button type="button" onclick="changeSpeed('alt-m15',-1)">−</button>
+        <span class="speed-label" id="speed-label-alt-m15">拖速×1</span>
+        <button type="button" onclick="changeSpeed('alt-m15',1)">＋</button>
+        <button type="button" onclick="resetView('alt-m15')">复位</button>
+      </div>
+      <div class="viewer"><div class="viewport" id="viewport-alt-m15">
+        <img class="pano-img" data-scheme="替代方案15m" draggable="false" src="{{替代方案15m图路径}}" alt="替代方案15m图">
       </div>
       <div class="hint">滚轮缩放 · 放大后可拖拽平移 · 双击复位</div></div>
     </div>
@@ -164,6 +276,7 @@
     var viewport = document.getElementById("viewport-" + id);
     if (!viewport) return;
     var img = viewport.querySelector(".pano-img");
+    if (!img) return;  // 图位降级（未启用分钟分形层/单方案防御）时无图片，仅显示说明
     var label = document.getElementById("zoom-label-" + id);
     var speedLabel = document.getElementById("speed-label-" + id);
     var state = { scale: 1, tx: 0, ty: 0, min: 1, max: 8, speedIdx: 0,
@@ -318,19 +431,19 @@
   }
   function changeSpeed(id, delta) { if (viewers[id] && viewers[id].changeSpeed) viewers[id].changeSpeed(delta); }
   function resetView(id) { if (viewers[id] && viewers[id].reset) viewers[id].reset(); }
-  function showTab(name, btn) {
-    document.querySelectorAll(".tab-panel").forEach(function (p) { p.classList.remove("active"); });
-    document.querySelectorAll(".tab-btn").forEach(function (b) { b.classList.remove("active"); });
-    document.getElementById("panel-" + name).classList.add("active");
+  // 分组选项卡：scheme=主/替代方案表，chart=8 张浪型图；互不影响
+  function activateTab(group, panelId, btn) {
+    document.querySelectorAll('[data-tab-group="' + group + '"]').forEach(function (p) { p.classList.remove("active"); });
+    document.getElementById(panelId).classList.add("active");
+    btn.parentNode.querySelectorAll(".tab-btn").forEach(function (b) { b.classList.remove("active"); });
     btn.classList.add("active");
-    ["pano"].forEach(function (kind) {
-      var v = viewers[name + "-" + kind];
-      if (v) { v.updateDims(); v.state.inertia = null; v.render(); }
-    });
+    var viewerId = panelId.replace(/^chart-/, "");
+    var v = viewers[viewerId];
+    if (v) { v.updateDims(); v.state.inertia = null; v.render(); }
   }
   document.addEventListener("DOMContentLoaded", function () {
-    initViewer("main-pano");
-    initViewer("alt-pano");
+    ["main-pano", "main-m60", "main-m30", "main-m15",
+     "alt-pano", "alt-m60", "alt-m30", "alt-m15"].forEach(initViewer);
   });
 </script>
 </body>

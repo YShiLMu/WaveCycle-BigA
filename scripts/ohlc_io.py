@@ -97,8 +97,13 @@ def load_ohlc(csv_path, set_date_index=False, start=None, end=None):
 
 
 def fmt_date(d):
-    """日期值 → 'YYYY-MM-DD'；None → '-'（判定表格的未发生占位）。"""
-    return pd.Timestamp(d).strftime("%Y-%m-%d") if d is not None else "-"
+    """日期/时刻值 → 'YYYY-MM-DD'（日级）或 'YYYY-MM-DD HH:MM'（分钟级保留时刻）；None → '-'。"""
+    if d is None:
+        return "-"
+    ts = pd.Timestamp(d)
+    if ts.hour or ts.minute or ts.second:
+        return ts.strftime("%Y-%m-%d %H:%M")
+    return ts.strftime("%Y-%m-%d")
 
 
 def check_metadata(csv_path, metadata_path=None, source="", fq="", require=False):

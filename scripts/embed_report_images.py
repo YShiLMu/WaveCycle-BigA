@@ -6,16 +6,19 @@
     python embed_report_images.py <分析输出文件夹> [--md-keep-absolute]
 
 流程:
-    1. 定位 图表/ 下 PNG：标准模式 2 张（主方案全景 + 替代方案全景，见 naming.IMAGE_KEYS/CHART_VIEWS 单一出处）；
-       单方案防御模式 1 张（仅主方案全景，替代方案缺失时其图区标记"不适用"），
-       只缺一张判错退出）;
+    1. 定位 图表/ 下 PNG（命名权威 naming.IMAGE_KEYS）：
+       - 日线全景为核心图：标准模式 2 张；单方案防御模式 1 张（仅主方案全景，
+         替代方案 4 个图位标记"不适用"）；
+       - 分钟分形层图（60m/30m/15m）成组可选：启用分钟分形层时标准模式 6 张、
+         单方案防御模式 3 张（仅主方案）；未启用时对应图位标记"未启用分钟分形层"；
+       - 分钟图组只允许 ∅ / 主方案 3 张 / 全部 6 张三种形态，缺张判错退出；
     2. 定位 分析报告_*.md 与 网页报告_*.html;
     3. md：把 ![说明](...主方案_全景.png) 等图片链接替换为 base64 data URI
        （--md-keep-absolute 时保留绝对路径并在文末注明回退原因）;
-    4. html：把 {{主方案全景图路径}} 等 2 个占位符替换为 base64 data URI；
-       单方案防御模式时，替代方案图区 <img> 删除、提示改为"不适用";
+    4. html：把 {{主方案全景图路径}} 等 8 个占位符替换为 base64 data URI；
+       缺图图位的 <img> 替换为对应降级说明（不适用 / 未启用分钟分形层）;
     5. 校验：html 内 data:image/png;base64, 数量 == <img class="pano-img"> 数量
-       == 实际图片数（2 或 1）；md 图片标记数量 == 实际图片数；html 必须保留模板
+       == 实际图片数；md 图片标记数量 == 实际图片数；html 必须保留模板
        头部特征注释（"波浪理论网页报告模板"）；任一不通过则以退出码 1 结束，
        禁止交付缺图文件。
 
@@ -32,7 +35,18 @@ import hashlib
 from html.parser import HTMLParser
 from PIL import Image
 
-from naming import HTML_TOKENS, IMAGE_KEYS
+from naming import HTML_TOKENS, IMAGE_KEYS, MINUTE_IMAGE_KEYS
+
+MINUTE_KEYS = {key for key, _fn in MINUTE_IMAGE_KEYS}
+MAIN_MINUTE_KEYS = {key for key in MINUTE_KEYS if key.startswith("主方案")}
+
+
+def missing_note(key, images):
+    """缺图图位的降级说明：单方案防御（替代全景缺失）时替代 4 图位标"不适用"，
+    其余分钟图位标"未启用分钟分形层"。"""
+    if key.startswith("替代方案") and "替代方案全景" not in images:
+        return "（单方案防御模式：替代方案未出图，不适用）"
+    return "（未启用分钟分形层：本图位由分钟分形层分析出图后注入）"
 
 IMG_PATTERN = re.compile(r'''<img\b(?:[^>"']|"[^"]*"|'[^']*')*>''', re.IGNORECASE)
 MD_IMAGE_PATTERN = re.compile(r"!\[([^\]]*)\]\(([^)]*)\)")
@@ -124,6 +138,14 @@ def locate_assets(folder: pathlib.Path):
     for key, filename in IMAGE_KEYS:
         if key not in images and key == "主方案全景":
             raise SystemExit(f"[错误] 缺少主方案全景图：{chart / filename}")
+    # 分钟分形层图成组规则：只允许 ∅ / 主方案 3 张（单方案防御）/ 全部 6 张
+    minute_found = {key for key in images if key in MINUTE_KEYS}
+    legal_groups = (set(), MAIN_MINUTE_KEYS, MINUTE_KEYS)
+    if minute_found not in legal_groups:
+        raise SystemExit("[错误] 分钟分形层图必须成组出图（主/替代各 60m+30m+15m），"
+                         "当前不齐：%s" % sorted(minute_found))
+    if "替代方案全景" in images and minute_found == MAIN_MINUTE_KEYS:
+        raise SystemExit("[错误] 替代方案全景存在但缺替代方案分钟图——分钟图组应为全部 6 张")
     mds = sorted(folder.glob("分析报告_*.md"))
     htmls = sorted(folder.glob("网页报告_*.html"))
     if len(mds) != 1:
@@ -138,7 +160,7 @@ def embed_md(md_path: pathlib.Path, images, keep_absolute: bool, write=True):
     found = md_images(text)
     for match, key, _source in reversed(found):
         if key not in images:
-            replacement = "（单方案防御：替代方案不适用）"
+            replacement = missing_note(key, images)
         else:
             target = images[key].resolve().as_posix() if keep_absolute else data_uri(images[key])
             replacement = "![%s](%s)" % (key, target)
@@ -158,7 +180,8 @@ def embed_html(html_path: pathlib.Path, images, write=True):
     text = html_path.read_text(encoding="utf-8")
     for match, key, attributes in reversed(pano_images(text)):
         if key not in images:
-            replacement = '<p data-scheme-unavailable="替代方案">（单方案防御模式：替代方案未出图，不适用）</p>'
+            replacement = ('<p class="img-note" data-scheme-unavailable="%s">%s</p>'
+                           % (key, missing_note(key, images)))
         else:
             if "src" not in attributes:
                 raise SystemExit("[校验失败] 全景图缺少 src 属性")
@@ -172,8 +195,7 @@ def embed_html(html_path: pathlib.Path, images, write=True):
             text = text.replace(token, images[key].name)
         else:
             miss_pat = re.compile(r'<div class="img-missing">[^<]*' + re.escape(token) + r'[^<]*</div>')
-            text = miss_pat.sub(
-                '<div class="img-missing">（单方案防御模式：替代方案未出图，不适用）</div>', text)
+            text = miss_pat.sub('<div class="img-missing">%s</div>' % missing_note(key, images), text)
             text = text.replace(token, "（无图）")
     if write:
         html_path.write_text(text, encoding="utf-8", newline="")
@@ -193,7 +215,11 @@ def validate(md_text: str, html_text: str, images, keep_absolute: bool):
         if md_state != html_state:
             raise SystemExit("[校验失败] 两份报告结构化状态不一致")
         rc.validate(md_state)
-        expected_count = 1 if md_state["报告模式"] == "单方案防御" else 2
+        state_defense = md_state["报告模式"] == "单方案防御"
+        if state_defense != ("替代方案全景" not in images):
+            raise SystemExit("[校验失败] 实际图片数与声明的报告模式不一致")
+        minute_expected = 0 if not (set(images) & MINUTE_KEYS) else (3 if state_defense else 6)
+        expected_count = (1 if state_defense else 2) + minute_expected
         if len(images) != expected_count:
             raise SystemExit("[校验失败] 实际图片数与声明的报告模式不一致")
     for label, text in (("md", md_text), ("html", html_text)):
@@ -206,7 +232,7 @@ def validate(md_text: str, html_text: str, images, keep_absolute: bool):
     if keep_absolute:
         for path in images.values():
             verify_png(path.read_bytes())
-    expected = len(images)  # 标准模式 2 张；单方案防御模式 1 张（见 naming.IMAGE_KEYS）
+    expected = len(images)  # 标准 2 / 防御 1（日线核心）+ 分钟组 0/3/6（见 naming.IMAGE_KEYS）
     html_records = pano_images(html_text)
     html_imgs = len(html_records)
     html_uris = html_text.count("data:image/png;base64,")
@@ -218,8 +244,8 @@ def validate(md_text: str, html_text: str, images, keep_absolute: bool):
         )
     if html_imgs != expected:
         raise SystemExit(
-            f"[校验失败] html <img> 数量 {html_imgs} ≠ 实际图表 {expected} 张"
-            f"（标准模式 2 张；单方案防御模式 1 张且替代方案图区应标记不适用）")
+            f"[校验失败] html <img> 数量 {html_imgs} 张 ≠ 实际图表 {expected} 张"
+            f"（日线核心：标准 2 / 单方案防御 1；分钟图组 0/3/6，缺图图位应有降级说明）")
     for token in HTML_TOKENS.values():
         if token in html_text:
             raise SystemExit(f"[校验失败] html 仍含未替换占位符：{token}")
@@ -259,10 +285,18 @@ def validate(md_text: str, html_text: str, images, keep_absolute: bool):
                     raise SystemExit("[校验失败] %s 图片编码无效：%s" % (label, exc))
             if hashlib.sha256(embedded_payload).digest() != original_hash:
                 raise SystemExit("[校验失败] %s 的 %s 图片与当前 PNG 原图不一致" % (label, key))
-    if expected == 1:
-        notices = re.findall(r'''<(?:p\b[^>]*data-scheme-unavailable=["']替代方案["'][^>]*|div class="img-missing")>([^<]*)</(?:p|div)>''', html_text)
+    if "替代方案全景" not in images:
+        notices = re.findall(r'''<(?:p\b[^>]*data-scheme-unavailable=["']替代方案[^"']*["'][^>]*|div class="img-missing")>([^<]*)</(?:p|div)>''', html_text)
         if not any("替代方案" in notice and "不适用" in notice for notice in notices):
             raise SystemExit("[校验失败] 单方案防御网页须在替代方案图区明确标记不适用")
+    # 分钟图位降级说明逐位核对：缺图的分钟图位（非防御缺图）各应有一条说明
+    # （按说明段落特征前缀计数，排除模板/CSS/JS 注释里的同名文字）
+    missing_minute_notes = [key for key in MINUTE_KEYS if key not in images
+                            and not (key.startswith("替代方案") and "替代方案全景" not in images)]
+    note_count = len(re.findall(r'<p class="img-note"[^>]*>（未启用分钟分形层', html_text))
+    if note_count != len(missing_minute_notes):
+        raise SystemExit("[校验失败] 「未启用分钟分形层」说明 %d 条 ≠ 缺图分钟图位 %d 个"
+                         % (note_count, len(missing_minute_notes)))
 
 
 def main():
