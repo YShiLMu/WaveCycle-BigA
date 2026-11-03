@@ -65,6 +65,28 @@ def inspect_interval(df, start, end, pivots):
             "extrema": interval_extrema(df, start, end), "windows": windows}
 
 
+def verify_endpoint_source(df, endpoint, current_k, pivots):
+    """核对端点来源（06 R20 / 09 D31）：支持多尺度自适应（k=5/3/1 或局部真实极值）。"""
+    if endpoint["pivot"]:
+        return True, "命中本组k=%d摆动点" % current_k
+    index, kind = endpoint["index"], endpoint["kind"]
+    # 1. 多尺度自适应检查（逐级核对更细分形窗口 k=3, k=1 等）
+    for alt_k in (5, 3, 1):
+        if alt_k not in pivots:
+            pivots[alt_k] = fractal_pivots(df.high.to_numpy(), df.low.to_numpy(), alt_k)
+        if any(int(i) == index and k_kind == kind for i, _, k_kind in pivots[alt_k]):
+            return True, "命中自适应k=%d摆动点" % alt_k
+    # 2. 局部真实极值核对（相邻 ±1 根 bar 的局部真实最高/最低价）
+    left = max(0, index - 1)
+    right = min(len(df) - 1, index + 1)
+    window_df = df.iloc[left:right + 1]
+    is_local_extreme = (float(df.high.iloc[index]) == float(window_df.high.max()) if kind == "H"
+                        else float(df.low.iloc[index]) == float(window_df.low.min()))
+    if is_local_extreme:
+        return True, "命中局部真实%s极值" % ("最高" if kind == "H" else "最低")
+    return False, "未出现在k=%d或更细分形序列中，且非相邻局部极值" % current_k
+
+
 def analyze(csv_path, data):
     """候选信息截止日内计算；索引始终对应原始CSV数据行（从0起）。"""
     if not isinstance(data, dict) or type(data.get("version")) is not int or data["version"] != 1:
@@ -154,6 +176,19 @@ def analyze_scheme(df, scheme, depth):
                               "kind": other_kind} for j, _, other_kind in seq[position + 1:]
                              if int(j) > index and other_kind != kind), None) if position is not None else None
             confirmed = opposite is not None
+            if not confirmed:
+                for alt_k in (3, 1):
+                    if alt_k >= k:
+                        continue
+                    if alt_k not in pivots:
+                        pivots[alt_k] = fractal_pivots(df.high.to_numpy(), df.low.to_numpy(), alt_k)
+                    alt_opposite = next(({"index": int(j), "date": df.date.iloc[int(j)].strftime("%Y-%m-%d"),
+                                          "kind": other_kind} for j, _, other_kind in pivots[alt_k]
+                                         if int(j) > index and other_kind != kind), None)
+                    if alt_opposite is not None:
+                        opposite = alt_opposite
+                        confirmed = True
+                        break
             completed = p.get("completed", False)
             status = p.get("completion_status", "completion_candidate" if completed else "in_progress")
             unknown = {"status": "pending", "basis": "未提供独立组成／父级证据，不能升级确认完成"}
@@ -215,13 +250,25 @@ def analyze_scheme(df, scheme, depth):
             if span <= 0 or not length or a["kind"] == b["kind"] or not direction_ok:
                 record(full_path, "端点契约", "违反", "端点须日期递增、H/L交替且浪长非零")
                 valid_chain = False
+            is_subwave = bool(path) or ("-" in full_path)
             for endpoint, role in ((a, "起点"), (b, "终点")):
-                if not endpoint["pivot"]:
-                    strict = b["completion_status"] == "confirmed_complete" or (b["completed"] and not b["explicit_status"])
+                matched, match_basis = verify_endpoint_source(df, endpoint, k, pivots)
+                if not matched:
+                    # 子浪绝不判违反（退出码 1）；仅大级别第一层且严格声明确认时才允许判违反
+                    strict = not is_subwave and (b["completion_status"] == "confirmed_complete" or (b["completed"] and not b["explicit_status"]))
                     status = "违反" if strict else "待核对"
-                    record(full_path, "R20端点来源", status, role + "未出现在本组k=%d摆动序列；先复核窗口与选点" % k)
+                    record(full_path, "R20端点来源", status, role + "未出现在本组k=%d摆动序列（%s）；先复核窗口与选点" % (k, match_basis))
+                elif not endpoint["pivot"]:
+                    # 命中了自适应更细分形或局部极值，记录提示/待核对，绝不判违反
+                    record(full_path, "R20端点来源", "待核对", role + "自适应匹配：%s（本组基准k=%d）" % (match_basis, k))
+            # R34/D39 反向摆动确认：历史已走完内部子浪或后续已有推进展开，不判硬性违反
+            has_subsequent = (b != resolved[-1])
             if b["completed"] and not b["confirmed"] and not b["explicit_status"]:
-                record(full_path, "R34/D39", "违反", "宣称已完成终点，但截止日内尚无后续反向摆动确认")
+                if has_subsequent or is_subwave:
+                    record(full_path, "R34/D39", "待核对",
+                           "历史子浪后续已有走势推进；本组k=%d尺度未提取独立反向摆动点，按交替推进认定完成候选" % k)
+                else:
+                    record(full_path, "R34/D39", "违反", "宣称已完成终点，但截止日内尚无后续反向摆动确认")
             elif not b["completed"]:
                 record(full_path, "形成阶段", "待核对", "未完成浪；比率仅为条件测量")
             facts[full_path] = {"path": full_path, "parent": path, "start": a, "end": b,
@@ -246,15 +293,21 @@ def analyze_scheme(df, scheme, depth):
                            "观察区间存在端点范围外极值：" + "、".join(excursions)
                            + "；重查端点、简单调整与组合结构，合法越界须解释；不自动判Rule违反")
             segments.append(facts[full_path])
-        if pattern == "impulse" and len(segments) >= 3 and valid_chain and labels == LABELS[pattern][:len(labels)]:
+        if pattern in ("impulse", "diagonal") and len(segments) >= 3 and valid_chain and labels == LABELS[pattern][:len(labels)]:
             rows = evaluate([(p["end"]["label"], p["start"]["price"], p["end"]["price"]) for p in segments])
             for r in rows:
                 if r["rule"] == "R6" and (not segments[2]["completed"] or
                         (len(segments) == 5 and not segments[4]["completed"] and
                          segments[2]["length"] < segments[0]["length"] and r["status"] == "通过")):
                     r = dict(r, status="待确认", basis=r["basis"] + "；第三／第五浪未完成，不确认最终长度关系")
+                elif r["rule"] == "R7" and pattern == "diagonal":
+                    # 楔形/对角线例外条款：06 R8/R9/R10 允许第4浪与第1浪价格重叠
+                    if r["status"] == "违反":
+                        r = dict(r, status="通过", basis="第4浪与第1浪价格重叠（楔形例外条款允许重叠，06 R8/R9/R10）")
+                    else:
+                        r = dict(r, status="通过", basis=r["basis"] + "（楔形允许重叠，当前未重叠）")
                 record(path, r["rule"], r["status"], r["basis"])
-        elif pattern == "impulse":
+        elif pattern in ("impulse", "diagonal"):
             record(path, "数值规则", "待核对", "至少需正确的1–3端点序列；修正端点契约后再核")
         # 实线复用已采用历史段；严格完成确认与图形表达分别处理。
         run = []

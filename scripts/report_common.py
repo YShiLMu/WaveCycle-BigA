@@ -286,8 +286,12 @@ def render_web_premise(data):
     source = {row["项"]: row["内容"] for row in data["tables"]["分析前提"]}
     dow = next((source[key] for key in ("道氏", "道氏前提", "道氏状态") if key in source), "未提供道氏判断")
     colors = "第一层白、第二层青、第三层橙" + ("、第四层亮黄绿" if data["细分深度"] == 4 else "")
+    scope = data.get("analysis_scope", {})
+    del_depth = scope.get("delivery_depth", data["细分深度"])
+    insp_depth = scope.get("inspection_depth", 1)
+    depth_desc = "交付%d层；实际端点登记到%d层" % (del_depth, insp_depth)
     return render_html_table(["项", "内容"], [
-        {"项": "细分深度", "内容": "%d层" % data["细分深度"]},
+        {"项": "细分深度", "内容": depth_desc},
         {"项": "观察截止", "内容": data["analysis_scope"]["data_end"]},
         {"项": "道氏", "内容": dow},
         {"项": "图例", "内容": colors + "；实线为方案采用的历史段，虚线为未完成段。实线不代表浪型或归属已确认。"},
@@ -342,7 +346,9 @@ def render_web_scheme(data, name):
             registered = sorted(all_children.get(wave["path"], []), key=lambda w: w["start"])
             full_span = (registered and registered[0]["start"] == wave["start"]
                          and registered[-1]["end"] == wave["end"] and all(w["completed"] for w in registered))
-            rows.append({"浪": wave["path"],
+            level = wave["path"].count("-")
+            indent = ("　" * level + "└─ ") if level > 0 else ""
+            rows.append({"浪": indent + wave["path"],
                          "起止点": "%s / %g → %s" % (wave["start"], wave["start_price"], end),
                          "浪型": web_wave_pattern(wave),
                          "是否细分": ("是" if full_span else "部分") if registered else "否"})

@@ -41,6 +41,7 @@
 - **G12** 第 5 浪子浪结构不完整就提前标失败是常见错误（判定前提见 references/rules.md R17；references/terminology.md 1.3.3）。
 - **G13** 作用浪大多以驱动形态（五浪）展开，反作用浪以调整形态展开；例外只出现在作用浪一侧：终结三角形中的 1、3、5，平台形 A 浪，三角形中的 A、C、E 浪（references/terminology.md 1.1.5）。
 - **G22** 失败浪位置规律：失败浪（Truncation）常出现在趋势末端或弱势环境中，是"大级别趋势可能已反转"的早期信号；但在趋势中段出现疑似失败时，应优先检视是否为延长浪或级别误判（references/terminology.md 1.3.3）。
+- **子浪展开与形态边界指引**：在展开第二层及更深层子浪时，斐波那契回撤/延伸比率（G5–G8）与等长原则（G2）均属概率性指导（Guideline），尺寸或比例偏差仅降低评分，绝非硬性 Rule 违规。若子浪展开中遇复杂筑底或末端形态，应主动检视引导对角线（Leading Diagonal，references/rules.md R9）、终结对角线（Ending Diagonal，references/rules.md R10）或复合调整（W-X-Y），严禁因局部波浪尺寸不规则或形态复杂而粗暴放弃细分。
 
 ## 5. 形态频率与解读
 

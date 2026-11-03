@@ -160,7 +160,7 @@
 }
 ```
 
-每个未展开或仅部分展开、且尚未到本次最深层的父浪必须各填gaps：path为实际父浪路径，state只允许in_progress（进行中）或unresolved（缺证／多解）。evidence、needed解释实际问题，review.windows须按k=5、3、1逐项列finding，与脚本生成的inspection摆动事实相互核对；仅写“尚未形成唯一序列”不构成检查。review.reason：ambiguity=多种具体数法（另列至少两种alternatives及支持／冲突）、resolution=日线分辨率不足、structure_conflict=结构反例待重数、ongoing=实际进行中。next_action：recount=重数父级、finer_data=补该区间更细数据、wait=等待后续；wait只用于ongoing，completed=true的历史浪禁止wait/ongoing/in_progress。已完成且子组端点闭合可不填gap；未完成子组即使止点重合仍须留具体缺证。gaps不能引用不存在的父浪或最深层浪。
+每个未展开或仅部分展开、且尚未到本次最深层的父浪必须各填gaps：path为实际父浪路径，state只允许in_progress（进行中）或unresolved（缺证／多解）。evidence、needed解释实际问题，review.windows须按k=5、3、1逐项列finding，与脚本生成的inspection摆动事实相互核对；仅写“尚未形成唯一序列”不构成检查。**【Gaps 硬性门禁】对于历史已完成的父浪，若其时间跨度 ≥15 根日 K 线（或日历跨度 ≥1 个月），严禁以 "reason": "resolution"（分辨率受限）或 "next_action": "finer_data" 逃避细分！凡日线 K 线数量充足的区间，必须在日线级别展开第二层（如 3-1 到 3-5）甚至第三层子浪；只有跨度 <15 根 K 线的窄幅/急促微浪才允许使用 resolution 说明**。review.reason：ambiguity=多种具体数法（另列至少两种alternatives及支持／冲突）、resolution=日线分辨率不足（受上述 ≥15 根硬门禁约束）、structure_conflict=结构反例待重数、ongoing=实际进行中。next_action：recount=重数父级、finer_data=补该区间更细数据（受上述 ≥15 根硬门禁约束）、wait=等待后续；wait只用于ongoing，completed=true的历史浪禁止wait/ongoing/in_progress。已完成且子组端点闭合可不填gap；未完成子组即使止点重合仍须留具体缺证。gaps不能引用不存在的父浪或最深层浪。
 
 每个方案的framework_start须与其根组起点一致；current_parent须指向真实第一层浪。第一层框架至截止日不足365个自然日，还须填short_scope_reason（为何较早结构未能支持年尺度框架，包括已核验的前序）与supplement（补证或复核要求）。不能只写“候选”“有限历史”。365日是项目覆盖披露阈值，不是波浪Rule，不要求每浪都跨一年。
 

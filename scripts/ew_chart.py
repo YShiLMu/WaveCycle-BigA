@@ -522,7 +522,9 @@ def _draw_paths(ax, plot_df, base, paths, t, fs):
         auto_seq = len(labels) == 1
         # 层级色按首个非空标签取：首点可为空标签（表示起点/更大级别，不显示框标），
         # 若用 labels[0] 会把空标签误判成第 1 层白，导致整条子浪链丢失层级配色。
-        c = _level_color(next((l for l in labels if l != ""), labels[0]), t)
+        first_lbl = next((l for l in labels if l != ""), labels[0])
+        lvl = _label_level(first_lbl)
+        c = _level_color(first_lbl, t)
         # 第一遍：过滤越界点，只留有效端点（峰谷判定依赖相邻有效端点，不能带洞）
         valid = []
         for i, idx in enumerate(idxs):
@@ -563,23 +565,34 @@ def _draw_paths(ax, plot_df, base, paths, t, fs):
         for k, lb in enumerate(label_seq):
             if lb != "":
                 last_labeled = k
+        # 按层级定制线宽与透明度（第一层大级别粗亮线，第二层子浪细线优雅叠加）
+        if lvl == 1:
+            line_w, line_alpha, arrow_w, dash_w = 2.0, 0.9, 1.8, 1.5
+            z_ord = 6  # 主干大浪置顶
+        elif lvl == 2:
+            line_w, line_alpha, arrow_w, dash_w = 1.0, 0.75, 1.0, 0.9
+            z_ord = 5
+        else:
+            line_w, line_alpha, arrow_w, dash_w = 0.8, 0.6, 0.8, 0.8
+            z_ord = 4
+
         # 0..last_labeled 段为实线（已确认），last_labeled 之后画虚线
         if last_labeled >= 0:
             # 实线段：从第 0 点画到 last_labeled 点
             ax.plot(xs[:last_labeled + 1], ys[:last_labeled + 1], color=c,
-                    linewidth=0.9, alpha=0.6, zorder=5,
+                    linewidth=line_w, alpha=line_alpha, zorder=z_ord,
                     marker=None, solid_capstyle="round", solid_joinstyle="round")
             # 虚线段：从 last_labeled 点画到路径末端（未走完/延伸段）
             if last_labeled < len(pts) - 1:
                 ax.plot(xs[last_labeled:], ys[last_labeled:], color=t["note"],
-                        linewidth=0.9, linestyle="--", alpha=0.8, zorder=5)
+                        linewidth=dash_w, linestyle="--", alpha=0.8, zorder=z_ord)
         # 每段末端加箭头（实线段用路径色，虚线段用灰）
         for k in range(len(pts) - 1):
             seg = t["note"] if k >= last_labeled else c
             ax.annotate("", xy=(xs[k + 1], ys[k + 1]), xytext=(xs[k], ys[k]),
                         arrowprops=dict(arrowstyle="-|>", color=seg,
-                                        lw=0.9, shrinkA=0, shrinkB=0),
-                        zorder=5)
+                                        lw=arrow_w, shrinkA=0, shrinkB=0),
+                        zorder=z_ord)
         # 几何自检（P1-4 ②）：R7 重叠 / 端点交替性——异常时告警，供免目检判定
         _msg = _geom_selfcheck(label_seq, pts)
         if _msg:
@@ -592,9 +605,16 @@ def check_path_prices(df, scope, name, paths):
     scheme = next(s for s in scope["schemes"] if s["name"] == name)
     waves = scheme["waves"]
     for indices, labels, overrides in paths:
+        if len(indices) != len(labels) and len(labels) == 1 and len(indices) > 1:
+            p_id = labels[0].strip("[]()")
+            children = sorted((w for w in waves
+                               if (w["path"].rsplit("-", 1)[0] if "-" in w["path"] else "") == p_id),
+                              key=lambda w: w["start"])
+            if len(children) + 1 == len(indices):
+                labels = [p_id + "-0"] + [display_path(c["path"]) for c in children]
         for position, (index, label) in enumerate(zip(indices, labels)):
             label = label.strip("[]()")
-            override = overrides[position] if overrides else None
+            override = overrides[position] if overrides and position < len(overrides) else None
             if override in ("peak", "trough"):
                 peak = override == "peak"
             elif position == 0:
@@ -604,11 +624,18 @@ def check_path_prices(df, scope, name, paths):
             day = df.index[index].strftime("%Y-%m-%d")
             if position == 0:
                 parent = label.rsplit("-", 1)[0] if "-" in label else ""
-                wave = next(w for w in waves if w["start"] == day and
-                            (display_path(w["path"]) == parent if parent else "-" not in w["path"]))
+                wave = next((w for w in waves if w["start"] == day and
+                             (display_path(w["path"]) == parent if parent else "-" not in w["path"])), None)
+                if wave is None and parent:
+                    wave = next((w for w in waves if w["start"] == day and
+                                 (w["path"].rsplit("-", 1)[0] if "-" in w["path"] else "") == parent), None)
+                if wave is None:
+                    continue
                 expected = wave["start_price"]
             else:
-                wave = next(w for w in waves if display_path(w["path"]) == label and w["end"] == day)
+                wave = next((w for w in waves if display_path(w["path"]) == label and w["end"] == day), None)
+                if wave is None:
+                    continue
                 expected = wave["end_price"]
             actual = float(df.iloc[index]["high" if peak else "low"])
             if actual != expected:

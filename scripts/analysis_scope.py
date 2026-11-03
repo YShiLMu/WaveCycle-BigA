@@ -147,6 +147,12 @@ def validate_review(wave):
         if (not isinstance(alternatives, list) or not all(isinstance(a, str) and a.strip() for a in alternatives)
                 or len(set(alternatives)) < 2):
             raise ValueError("多解须列至少两种具体候选，不能只写未形成唯一序列")
+    if wave.get("completed") and review["reason"] == "resolution":
+        bars = wave.get("bars")
+        days = (parse_date(wave["end"]) - parse_date(wave["start"])).days
+        if (bars is not None and bars >= 15) or days >= 30:
+            n_desc = f"{bars} 根K线" if bars is not None else f"{days} 天"
+            raise ValueError(f"历史父浪跨度达 {n_desc}，日线分辨率充裕，必须展开第二层子浪细分，禁止以分辨率不足填报 gaps")
 
 
 def validate_scope(scope, depth, names):
@@ -324,6 +330,7 @@ def from_facts(metadata, result, data_start):
                 raise ValueError("父浪%s未展开，须逐浪补gaps的state/evidence/needed" % path)
             record = {"path": path, "start": fact["start"]["date"], "end": fact["end"]["date"],
                       "start_price": fact["start"]["price"], "end_price": fact["end"]["price"],
+                      "bars": fact.get("bars"),
                       "inspection": deepcopy(fact.get("inspection")),
                       "completed": fact["completed"], "confirmed": fact["end"]["confirmed"],
                       "completion_status": fact["completion_status"],
@@ -358,14 +365,24 @@ def check_chart(scope, depth, name, dates, start_index, last_n, paths):
         raise ValueError("正式全景图--last会裁掉第一层框架，禁止缩窗")
     expected = set()
     for wave in scheme["waves"]:
-        if is_solid_segment(wave):
+        if "-" not in wave["path"] and is_solid_segment(wave):
             expected.add((display_path(wave["path"]), wave["end"]))
     actual = set()
     root_start = False
     indexed = {w["path"]: w for w in scheme["waves"]}
     for indices, labels, _ in paths:
         if len(indices) != len(labels):
-            raise ValueError("正式全景图须用逐点标签的--path，禁止自动序号")
+            if len(labels) == 1 and len(indices) > 1:
+                p_id = labels[0].strip("[]()")
+                children = sorted((w for w in scheme["waves"]
+                                   if (w["path"].rsplit("-", 1)[0] if "-" in w["path"] else "") == p_id),
+                                  key=lambda w: w["start"])
+                if len(children) + 1 == len(indices):
+                    labels = [p_id + "-0"] + [display_path(c["path"]) for c in children]
+                else:
+                    raise ValueError("正式全景图须用逐点标签的--path，禁止自动序号")
+            else:
+                raise ValueError("正式全景图须用逐点标签的--path，禁止自动序号")
         if not indices:
             raise ValueError("正式全景图路径不能为空")
         first = labels[0].strip("[]()")
@@ -424,7 +441,9 @@ def scope_tables(scope):
         premise.append({"项": scheme["name"] + "四层范围", "内容": "、".join(scheme.get("fourth_layer_roots", [])) or
                         ("全分析范围" if scope["delivery_depth"] == 4 else "三层交付；必要第四层另留证")})
         for wave in scheme["waves"] + scheme.get("extra_checks", []):
-            coverage.append({"方案": scheme["name"], "父浪": wave["path"],
+            level = wave["path"].count("-")
+            indent = ("　" * level + "└─ ") if level > 0 else ""
+            coverage.append({"方案": scheme["name"], "父浪": indent + wave["path"],
                              "候选起止点": "%g/%s→%g/%s" % (wave["start_price"], wave["start"], wave["end_price"], wave["end"]),
                              "观察区间": wave["start"] + "—" + wave["inspection"]["end"],
                              "摆动确认": "已确认价格拐点" if wave["confirmed"] else "价格拐点未确认",
