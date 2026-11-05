@@ -26,6 +26,7 @@ from analysis_scope import from_facts, validate_completion, is_solid_segment
 LABELS = {
     "impulse": ["1", "2", "3", "4", "5"],
     "diagonal": ["1", "2", "3", "4", "5"],
+    "motive": ["1", "2", "3", "4", "5"],
     "zigzag": ["A", "B", "C"], "flat": ["A", "B", "C"],
     "triangle": ["A", "B", "C", "D", "E"],
     "double_combination": ["W", "X", "Y"],
@@ -292,9 +293,37 @@ def analyze_scheme(df, scheme, depth):
                     record(full_path, "区间极值复核", "待核对",
                            "观察区间存在端点范围外极值：" + "、".join(excursions)
                            + "；重查端点、简单调整与组合结构，合法越界须解释；不自动判Rule违反")
+                # 状态机逆向破位拦截：若未完成的驱动推进浪在后续行情中击穿了其起点价格，说明前序调整浪尚未结束
+                if not b["completed"] and observation_end > a["index"]:
+                    after_start = df.iloc[a["index"] + 1: observation_end + 1]
+                    if not after_start.empty:
+                        min_after = float(after_start["low"].min())
+                        max_after = float(after_start["high"].max())
+                        is_upward = (b["kind"] == "H") or (a["kind"] == "L" and b["price"] >= a["price"])
+                        if is_upward and min_after < a["price"]:
+                            record(full_path, "起点有效性/前浪未终结", "违反",
+                                   "进行中推进浪后续创出更低价 %g，跌破起点价 %g（前序调整浪终点）；表明前序调整浪尚未终结，严禁提前声明完成并开启新浪"
+                                   % (min_after, a["price"]))
+                        elif not is_upward and max_after > a["price"]:
+                            record(full_path, "起点有效性/前浪未终结", "违反",
+                                   "进行中推进浪后续创出更高价 %g，升破起点价 %g（前序反弹浪终点）；表明前序调整浪尚未终结，严禁提前声明完成并开启新浪"
+                                   % (max_after, a["price"]))
             segments.append(facts[full_path])
-        if pattern in ("impulse", "diagonal") and len(segments) >= 3 and valid_chain and labels == LABELS[pattern][:len(labels)]:
-            rows = evaluate([(p["end"]["label"], p["start"]["price"], p["end"]["price"]) for p in segments])
+        if pattern in ("impulse", "diagonal", "motive") and len(segments) >= 3 and valid_chain and labels == LABELS[pattern][:len(labels)]:
+            extrema_map = {}
+            for p in segments:
+                lbl = p["end"]["label"]
+                st_idx = p["start"]["index"]
+                ed_idx = p["end"]["index"]
+                if ed_idx > st_idx:
+                    sub_df = df.iloc[st_idx + 1: ed_idx + 1]
+                    high_val = max(float(sub_df["high"].max()), p["start"]["price"], p["end"]["price"])
+                    low_val = min(float(sub_df["low"].min()), p["start"]["price"], p["end"]["price"])
+                else:
+                    high_val = max(p["start"]["price"], p["end"]["price"])
+                    low_val = min(p["start"]["price"], p["end"]["price"])
+                extrema_map[lbl] = {"high": high_val, "low": low_val}
+            rows = evaluate([(p["end"]["label"], p["start"]["price"], p["end"]["price"]) for p in segments], extrema=extrema_map)
             for r in rows:
                 if r["rule"] == "R6" and (not segments[2]["completed"] or
                         (len(segments) == 5 and not segments[4]["completed"] and
@@ -303,11 +332,11 @@ def analyze_scheme(df, scheme, depth):
                 elif r["rule"] == "R7" and pattern == "diagonal":
                     # 楔形/对角线例外条款：06 R8/R9/R10 允许第4浪与第1浪价格重叠
                     if r["status"] == "违反":
-                        r = dict(r, status="通过", basis="第4浪与第1浪价格重叠（楔形例外条款允许重叠，06 R8/R9/R10）")
+                        r = dict(r, status="通过", basis="第4浪与第1浪价格重叠（倾斜三角形/楔形 Diagonal 例外条款允许重叠，06 R8/R9/R10 / R-DIA-06/07）")
                     else:
-                        r = dict(r, status="通过", basis=r["basis"] + "（楔形允许重叠，当前未重叠）")
+                        r = dict(r, status="通过", basis=r["basis"] + "（倾斜三角形/楔形允许重叠，当前未重叠）")
                 record(path, r["rule"], r["status"], r["basis"])
-        elif pattern in ("impulse", "diagonal"):
+        elif pattern in ("impulse", "diagonal", "motive"):
             record(path, "数值规则", "待核对", "至少需正确的1–3端点序列；修正端点契约后再核")
         # 实线复用已采用历史段；严格完成确认与图形表达分别处理。
         run = []

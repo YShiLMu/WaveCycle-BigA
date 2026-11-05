@@ -58,14 +58,18 @@ def get(waves, label):
     return None
 
 
-def evaluate(waves, direction=None):
-    """共享数值检查：价格不负责确认形态；返回可复用记录，不打印。"""
+def evaluate(waves, direction=None, extrema=None):
+    """共享数值检查：价格不负责确认形态；返回可复用记录，不打印。
+    extrema 可选字典，提供各浪含影线极值 {label: {"high": float, "low": float}}。
+    """
     by_label = {w[0]: w for w in waves}
     if len(by_label) != len(waves):
         raise ValueError("浪标签重复")
     if not all(label in by_label for label in ("1", "2", "3")):
         raise ValueError("缺少第1/2/3浪")
     if set(by_label) - {"1", "2", "3", "4", "5"}:
+        if any(lbl in by_label for lbl in ("A", "B", "C", "a", "b", "c")):
+            raise ValueError("普通推动只接受1–5标签；若校验调整浪请指定 --pattern zigzag 或 flat")
         raise ValueError("普通推动只接受1–5标签")
     if "5" in by_label and "4" not in by_label:
         raise ValueError("提供第5浪时不能缺第4浪")
@@ -84,6 +88,7 @@ def evaluate(waves, direction=None):
     def row(rule, status, basis):
         result.append({"rule": rule, "status": status, "basis": basis})
 
+    ext_dict = extrema or {}
     ok = w2[2] >= w1[1] if up else w2[2] <= w1[1]
     row("R5", "通过" if ok else "违反", "第2浪终点 %g；第1浪起点 %g（等号允许）" % (w2[2], w1[1]))
     l1, l3 = abs(w1[2] - w1[1]), abs(w3[2] - w3[1])
@@ -95,8 +100,27 @@ def evaluate(waves, direction=None):
     else:
         row("R6", "待确认", "第5浪未提供；|1|=%g、|3|=%g；若第3浪已完成且短于第1浪，第5浪长度须 ≤ %g" % (l1, l3, l3))
     if w4:
-        ok = w4[2] > w1[2] if up else w4[2] < w1[2]
-        row("R7", "通过" if ok else "违反", "第4浪终点 %g；第1浪终点 %g（触及即违反）" % (w4[2], w1[2]))
+        if up:
+            w1_top = ext_dict.get("1", {}).get("high", max(w1[1], w1[2]))
+            w4_bottom = ext_dict.get("4", {}).get("low", min(w4[1], w4[2]))
+            ok = w4_bottom > w1_top
+            if ok:
+                basis = ("第4浪区间最低 %g 高于第1浪最高 %g，无重叠；推动浪（Impulse）绝大多数情况下严禁重叠（仅倾斜三角形/楔形 Diagonal 例外允许）"
+                         % (w4_bottom, w1_top))
+            else:
+                basis = ("第4浪区间最低 %g 侵入第1浪最高 %g 区域发生重叠；在波浪理论中，绝大多数情况下推动浪（Impulse）严禁浪4与浪1价格重叠；仅当形态为倾斜三角形（斜纹浪/楔形 Diagonal Wave）时作为唯一形态例外允许重叠。当前方案被明确声明为推动浪（Impulse），一票否决"
+                         % (w4_bottom, w1_top))
+        else:
+            w1_bottom = ext_dict.get("1", {}).get("low", min(w1[1], w1[2]))
+            w4_top = ext_dict.get("4", {}).get("high", max(w4[1], w4[2]))
+            ok = w4_top < w1_bottom
+            if ok:
+                basis = ("第4浪区间最高 %g 低于第1浪最低 %g，无重叠；推动浪（Impulse）绝大多数情况下严禁重叠（仅倾斜三角形/楔形 Diagonal 例外允许）"
+                         % (w4_top, w1_bottom))
+            else:
+                basis = ("第4浪区间最高 %g 侵入第1浪最低 %g 区域发生重叠；在波浪理论中，绝大多数情况下推动浪（Impulse）严禁浪4与浪1价格重叠；仅当形态为倾斜三角形（斜纹浪/楔形 Diagonal Wave）时作为唯一形态例外允许重叠。当前方案被明确声明为推动浪（Impulse），一票否决"
+                         % (w4_top, w1_bottom))
+        row("R7", "通过" if ok else "违反", basis)
     else:
         row("R7", "不适用", "未提供第4浪")
     if w5:
@@ -108,14 +132,78 @@ def evaluate(waves, direction=None):
     return result
 
 
+def evaluate_corrective(waves, pattern="zigzag", direction=None):
+    """调整浪（A-B-C）数值规则判定（R12/R25 等）。"""
+    by_label = {w[0]: w for w in waves}
+    if len(by_label) != len(waves):
+        raise ValueError("浪标签重复")
+    if "A" not in by_label:
+        raise ValueError("调整浪必须包含A浪")
+    if set(by_label) - {"A", "B", "C"}:
+        raise ValueError("基础调整浪只接受A–C标签")
+    if "C" in by_label and "B" not in by_label:
+        raise ValueError("提供C浪时不能缺B浪")
+
+    order = [by_label[k] for k in ["A", "B", "C"] if k in by_label]
+    for i, (_, start, end) in enumerate(order):
+        if not all(math.isfinite(v) for v in (start, end)) or start == end:
+            raise ValueError("端点必须有限且浪长非零")
+        if i and order[i - 1][2] != start:
+            raise ValueError("相邻浪端点必须相接")
+
+    wa = by_label["A"]
+    up = wa[2] > wa[1]
+    if direction is not None and (direction == "up") != up:
+        raise ValueError("显式方向与A浪端点不一致")
+
+    result = []
+
+    def row(rule, status, basis):
+        result.append({"rule": rule, "status": status, "basis": basis})
+
+    wb = by_label.get("B")
+    wc = by_label.get("C")
+
+    if wb:
+        # R25: 调整浪方向规则：B 浪方向必须与 A 浪反向
+        b_up = wb[2] > wb[1]
+        b_dir_ok = (b_up != up)
+        row("R25", "通过" if b_dir_ok else "违反",
+            "B浪方向必须与A浪反向（A浪 %s，B浪 %s）" % ("向上" if up else "向下", "向上" if b_up else "向下"))
+
+        if pattern == "zigzag":
+            # R12 / R-ZIG-02: 锯齿形 B 浪终点不得越过 A 浪起点（不得回撤 100% 以上，等号允许）
+            b_not_breach = (wb[2] >= wa[1]) if up else (wb[2] <= wa[1])
+            row("R12", "通过" if b_not_breach else "违反",
+                "锯齿形B浪终点 %g；A浪起点 %g（不得越过A浪起点，等号允许）" % (wb[2], wa[1]))
+    else:
+        row("R12", "待确认", "未提供B浪，暂无法验证回撤边界")
+
+    if wc:
+        # R25: C 浪必须与 A 浪同向
+        c_up = wc[2] > wc[1]
+        c_dir_ok = (c_up == up)
+        row("R25-C", "通过" if c_dir_ok else "违反",
+            "C浪方向必须与A浪同向（A浪 %s，C浪 %s）" % ("向上" if up else "向下", "向上" if c_up else "向下"))
+        la, lc = abs(wa[2] - wa[1]), abs(wc[2] - wc[1])
+        ratio = lc / la if la > 0 else 0
+        row("R-FIB", "参考", "C浪/A浪长度比 = %.3f（经典比率 1.0 或 1.618）" % ratio)
+
+    return result
+
+
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="普通推动数值规则检查（R5/R6/R7/R17/R29）")
+    ap = argparse.ArgumentParser(description="波浪规则数值检查（推动浪 R5/R6/R7/R17/R29；调整浪 R12/R25）")
     ap.add_argument("--wave", action="append", required=True, help="重复传入 标签:起点价:终点价")
+    ap.add_argument("--pattern", choices=["impulse", "zigzag", "flat"], default="impulse", help="形态类型：impulse(默认)|zigzag|flat")
     ap.add_argument("--dir", choices=["up", "down"])
     args = ap.parse_args(argv)
     waves = [parse_wave(t) for t in args.wave]
     try:
-        records = evaluate(waves, args.dir)
+        if args.pattern in ("zigzag", "flat"):
+            records = evaluate_corrective(waves, pattern=args.pattern, direction=args.dir)
+        else:
+            records = evaluate(waves, args.dir)
     except ValueError as exc:
         raise SystemExit("[错误] " + str(exc)) from exc
     print("## Rule Check 数值判定（rule_check.py，R20 极端价位口径）\n")

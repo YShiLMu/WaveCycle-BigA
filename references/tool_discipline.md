@@ -32,7 +32,7 @@
 - **`swings.py`**：`-h` `--csv` `--k` `--start` `--end` `--weekly` `--chart-args` `--tail` `--path` `--dow` `--fib`
 - **`key_levels.py`**：`-h` `--start` `--end` `--csv` `--shadow-ratio` `--trend-threshold` `--window` `--swing-k` `--cluster-tolerance` `--recent` `--gap-band` `--max-levels`
 - **`preflight.py`**：`-h` `--csv` `--source` `--fq` `--metadata` `--require-metadata` `--k` `--start` `--end` `--weekly` `--tail` `--no-dow` `--no-key-levels` `--key-levels-args` `--compact` `--no-compact`
-- **`rule_check.py`**：`-h` `--wave` `--dir`
+- **`rule_check.py`**：`-h` `--wave` `--pattern` `--dir`
 - **`score.py`**：`-h` `--scheme`
 - **`wave_facts.py`**：`-h` `--csv` `--data` `--out` `--format` `--scheme` `--path`
 - **`target_calc.py`**：`-h` `--start` `--end` `--kind` `--anchor` `--direction` `--ratio` `--format`
