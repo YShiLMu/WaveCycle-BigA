@@ -17,6 +17,7 @@ import re
 import sys
 import tempfile
 
+import rule_ids
 from ohlc_io import load_ohlc
 from rule_check import evaluate
 from swings import fractal_pivots
@@ -325,11 +326,11 @@ def analyze_scheme(df, scheme, depth):
                 extrema_map[lbl] = {"high": high_val, "low": low_val}
             rows = evaluate([(p["end"]["label"], p["start"]["price"], p["end"]["price"]) for p in segments], extrema=extrema_map)
             for r in rows:
-                if r["rule"] == "R6" and (not segments[2]["completed"] or
+                if r["rule"].startswith("R-IMP-09") and (not segments[2]["completed"] or
                         (len(segments) == 5 and not segments[4]["completed"] and
                          segments[2]["length"] < segments[0]["length"] and r["status"] == "通过")):
                     r = dict(r, status="待确认", basis=r["basis"] + "；第三／第五浪未完成，不确认最终长度关系")
-                elif r["rule"] == "R7" and pattern == "diagonal":
+                elif rule_ids.touch_counts(r["rule"]) and pattern == "diagonal":
                     # 楔形/对角线例外条款：06 R8/R9/R10 允许第4浪与第1浪价格重叠
                     if r["status"] == "违反":
                         r = dict(r, status="通过", basis="第4浪与第1浪价格重叠（倾斜三角形/楔形 Diagonal 例外条款允许重叠，06 R8/R9/R10 / R-DIA-06/07）")

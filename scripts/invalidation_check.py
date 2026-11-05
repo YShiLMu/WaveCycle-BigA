@@ -49,6 +49,7 @@ import math
 
 import pandas as pd
 
+import rule_ids
 from ohlc_io import load_ohlc, fmt_date
 
 
@@ -237,7 +238,7 @@ def parse_report_levels(path):
             entry["kind"] = "结构失效"
             structural.append(entry)
             continue
-        if not kind and not re.search(r"\bR(?:[1-9]|[12][0-9]|3[0-5])\b", basis):
+        if not kind and not rule_ids.rule_ids(basis):
             raise SystemExit("[错误] 历史失效表缺少类型且依据不能确定，请恢复正文后补齐类型")
         entry["kind"] = "规则失效"
         rules.append(entry)
@@ -263,10 +264,10 @@ def check_level(df, lv, since=None, confirm_bars=2):
         start = next(i for i, d in enumerate(df["date"]) if d >= ts)
 
     rule_kind = "规则失效" in lv.get("kind", "")
-    if rule_kind and not set(re.findall(r"\bR(\d+)\b", lv.get("rule", ""))) & {"5", "6", "7", "17", "29"}:
+    if rule_kind and not rule_ids.has_derivable_rule(lv.get("rule", "")):
         return {**lv, "status": "待确认（未提供可推导价格比较符的规则）", "first_touch": None,
                 "confirmed": None, "run": 0, "dist": float(closes[-1]) - price}
-    strict = rule_kind and not re.search(r"\bR7\b", lv.get("rule", ""))
+    strict = rule_kind and not rule_ids.touch_counts(lv.get("rule", ""))
     touch = None
     for i in range(start, len(df)):
         hit = (lows[i] < price if strict else lows[i] <= price) if down else (highs[i] > price if strict else highs[i] >= price)

@@ -1,4 +1,4 @@
 interface:
-  display_name: "观复 WaveCycle · 三理论（波浪+道氏+江恩）"
+  display_name: "观复 WaveCycle（波浪+道氏+江恩+蜡烛图）"
   short_description: "Elliott Wave 数浪 × 道氏趋势前提 × 江恩时间/价位验证，含共振状态与仓位闸门"
   default_prompt: "使用 $wavecycle 分析沪深300 日线走势，给出主备数浪、校验结果、失效价位与概率排序。"

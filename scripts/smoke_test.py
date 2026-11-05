@@ -379,6 +379,7 @@ def main(argv=None):
         },
         "tables": {
             "分析前提": [{"项": "细分深度来源", "内容": "默认-3层"},
+                        {"项": "分钟分形层", "内容": "已询问-不启用"},
                         {"项": "级别", "内容": "日线级别"}],
             "主方案数浪": [{"浪": "1", "端点": "100/2024-01-01 → 160/2024-02-01", "结构": "Impulse", "说明": "测试"}],
             "neely参考": [{"脚本": "结构阶梯", "输出": "通过", "意义": "测试"}],
@@ -414,12 +415,43 @@ def main(argv=None):
                           "--data", "-"], stdin_text=bad_payload)
     check("缺细分深度来源被拦截（R35/D37）", code != 0 and "细分深度来源" in err,
           (out + err).strip()[:150])
+    # 负例：缺"分钟分形层"询问记录应被拦截（04 EG-07，未登记答复不得出报告）
+    bad_ask = json.loads(payload)
+    bad_ask["tables"]["分析前提"] = [r for r in bad_ask["tables"]["分析前提"]
+                                     if r["项"] != "分钟分形层"]
+    code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_md.py"),
+                          "--data", "-"], stdin_text=json.dumps(bad_ask, ensure_ascii=False))
+    check("缺分钟分形层询问记录被拦截（EG-07）", code != 0 and "分钟分形层" in err,
+          (out + err).strip()[:150])
+    # 负例：非法答复值（模型自行判定跳过）不得通过
+    bad_ask_value = json.loads(payload)
+    for row in bad_ask_value["tables"]["分析前提"]:
+        if row["项"] == "分钟分形层":
+            row["内容"] = "跳过"
+    code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_md.py"),
+                          "--data", "-"], stdin_text=json.dumps(bad_ask_value, ensure_ascii=False))
+    check("非法分钟分形层答复被拦截（EG-07）", code != 0 and "分钟分形层" in err,
+          (out + err).strip()[:150])
     # 负例：失效价位表缺"方向"列应被校验拦截（--from-report 零推断依赖）
     bad_dir = json.loads(payload)
     del bad_dir["tables"]["失效价位"][0]["方向"]
     code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_md.py"),
                           "--data", "-"], stdin_text=json.dumps(bad_dir, ensure_ascii=False))
     check("失效价位表缺方向列被拦截", code != 0 and "方向" in err, (out + err).strip()[:150])
+    # 2代编号：可推导数值边界的公理可作规则失效；非边界公理（延长浪独占）不得冒充
+    alpha_ok = json.loads(payload)
+    for row in alpha_ok["tables"]["失效价位"]:
+        row["规则依据"] = "R-IMP-07 浪2回撤上限"
+    code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_md.py"),
+                          "--data", "-"], stdin_text=json.dumps(alpha_ok, ensure_ascii=False))
+    check("2代编号 R-IMP-07 被规则失效接受", code == 0, (out + err).strip()[:150])
+    alpha_bad = json.loads(payload)
+    for row in alpha_bad["tables"]["失效价位"]:
+        row["规则依据"] = "R-IMP-11 延长浪独占"
+    code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_md.py"),
+                          "--data", "-"], stdin_text=json.dumps(alpha_bad, ensure_ascii=False))
+    check("非数值边界公理不得冒充规则失效", code != 0 and "R-IMP-07" in err,
+          (out + err).strip()[:150])
     bad_scope = {k: v for k, v in data.items() if k != "analysis_scope"}
     code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_md.py"),
                           "--data", "-"], stdin_text=json.dumps(bad_scope, ensure_ascii=False))
@@ -562,7 +594,7 @@ def main(argv=None):
     check("无 volume 列 DO4 不适用", code == 0 and "DO4 不适用" in out, out[-200:])
 
     # ---- 11. rule_check.py ----
-    print("== 11. rule_check.py（R5/R6/R7/R17/R29 数值判定）==")
+    print("== 11. rule_check.py（R-IMP-07/09/10 与失败浪位置判定）==")
     code, out, err = run([sys.executable, os.path.join(HERE, "rule_check.py"),
                           "--wave", "1:100:160", "--wave", "2:160:130",
                           "--wave", "3:130:220", "--wave", "4:220:185", "--wave", "5:185:190"])
@@ -571,11 +603,11 @@ def main(argv=None):
     code, out, err = run([sys.executable, os.path.join(HERE, "rule_check.py"),
                           "--wave", "1:100:160", "--wave", "2:160:130",
                           "--wave", "3:130:220", "--wave", "4:220:155"])
-    check("R7 违反（exit 1）", code == 1 and "| R7 | 违反 |" in out, out.strip()[:200])
+    check("R-IMP-10 违反（exit 1）", code == 1 and "| R-IMP-10 | 违反 |" in out, out.strip()[:200])
     code, out, err = run([sys.executable, os.path.join(HERE, "rule_check.py"),
                           "--wave", "1:100:80", "--wave", "2:80:90",
                           "--wave", "3:90:55", "--wave", "4:55:70", "--wave", "5:70:60"])
-    check("下跌推动镜像识别", code == 0 and all("| %s | 通过 |" % rule in out for rule in ("R5", "R6", "R7")),
+    check("下跌推动镜像识别", code == 0 and all("| %s | 通过 |" % rule in out for rule in ("R-IMP-07", "R-IMP-09", "R-IMP-10")),
           out.strip()[:200])
     code, out, err = run([sys.executable, os.path.join(HERE, "rule_check.py"),
                           "--wave", "1:100:160", "--wave", "2:160:130"])

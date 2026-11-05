@@ -19,8 +19,9 @@
        缺图图位的 <img> 替换为对应降级说明（不适用 / 未启用分钟分形层）;
     5. 校验：html 内 data:image/png;base64, 数量 == <img class="pano-img"> 数量
        == 实际图片数；md 图片标记数量 == 实际图片数；html 必须保留模板
-       头部特征注释（"波浪理论网页报告模板"）；任一不通过则以退出码 1 结束，
-       禁止交付缺图文件。
+       头部特征注释（"波浪理论网页报告模板"）；报告的"分钟分形层"询问记录须与
+       分钟图组一致（记录=已询问-启用 ⟺ 存在 60m/30m/15m 图，04 EG-07）；
+       任一不通过则以退出码 1 结束，禁止交付缺图文件。
 
 本脚本不删除 图表/ 目录：PNG 原图与内嵌后的两个交付文档一同永久归档。
 """
@@ -127,6 +128,11 @@ def data_uri(png_path: pathlib.Path) -> str:
     return "data:image/png;base64," + base64.b64encode(payload).decode("ascii")
 
 
+def minute_group_consistent(record, has_minute):
+    """分钟分形层询问记录与图组必须一致：已询问-启用 ⟺ 有分钟图（04 EG-07）。"""
+    return (record == "已询问-启用") == bool(has_minute)
+
+
 def locate_assets(folder: pathlib.Path):
     chart = folder / "图表"
     images = {}
@@ -214,7 +220,7 @@ def validate(md_text: str, html_text: str, images, keep_absolute: bool):
             raise SystemExit("[校验失败] 报告状态错误：%s" % exc)
         if md_state != html_state:
             raise SystemExit("[校验失败] 两份报告结构化状态不一致")
-        rc.validate(md_state)
+        rc.validate(md_state, legacy_ok=True)  # 旧归档无询问记录时允许重嵌，新报告仍由生成器严格拦截
         state_defense = md_state["报告模式"] == "单方案防御"
         if state_defense != ("替代方案全景" not in images):
             raise SystemExit("[校验失败] 实际图片数与声明的报告模式不一致")
@@ -222,6 +228,14 @@ def validate(md_text: str, html_text: str, images, keep_absolute: bool):
         expected_count = (1 if state_defense else 2) + minute_expected
         if len(images) != expected_count:
             raise SystemExit("[校验失败] 实际图片数与声明的报告模式不一致")
+        minute_record = next((str(r["内容"]).strip() for r in md_state["tables"]["分析前提"]
+                              if str(r.get("项", "")).strip() == rc.MINUTE_ASK_ROW), None)
+        if minute_record is None:
+            print("[提示] 旧归档无询问记录，按实际图组重嵌（分钟图 %d 张），不做记录↔图组核对"
+                  % len(set(images) & MINUTE_KEYS), file=sys.stderr)
+        elif not minute_group_consistent(minute_record, set(images) & MINUTE_KEYS):
+            raise SystemExit("[校验失败] 分钟分形层记录与图组不一致：记录=%s，分钟图=%s"
+                             "（04 EG-07）" % (minute_record, "有" if set(images) & MINUTE_KEYS else "无"))
     for label, text in (("md", md_text), ("html", html_text)):
         for encoded in re.findall(r"data:image/png;base64,([^\"')\s<>]*)", text):
             try:

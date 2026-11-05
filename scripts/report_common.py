@@ -15,7 +15,8 @@ data.json 模式（顶层键）：
                         "结论": "偏多" }  # 各层价日及状态从analysis_scope读取，不另填端点
     }
 细分深度3/4必填；三层来源默认-3层或用户确认-3层，四层来源用户确认-4层。
-分析前提须披露来源，交付范围与额外检查证据由analysis_scope版本3保留。
+分析前提须披露来源，交付范围与额外检查证据由analysis_scope版本3保留；
+分析前提另须含唯一一行"分钟分形层"询问答复（已询问-启用／已询问-不启用／未询问-环境无交互，04 EG-07）。
 正式报告须含analysis_scope（D41），由wave_facts按CSV生成并逐父浪保留缺证。
 失效价位表固定列：方案 / 失效价位 / 方向（break-down/break-up，--from-report 零推断依赖）/
 规则依据 / 触发后果；两个模板 {{失效价位表}} 外侧带 INVALIDATION-TABLE 锚点
@@ -30,6 +31,7 @@ import math
 import html
 
 from naming import IMAGE_PLACEHOLDERS, validate_component
+import rule_ids
 from analysis_scope import validate_scope, scope_tables, endpoint_chain, position_tables
 
 # 文本字段（字符串直接替换占位符）；简明分析说明为独立对象，不在此列
@@ -49,6 +51,10 @@ TABLE_FIELDS = {
     "八因子": ["因子", "主方案", "替代方案"],
     "失效价位": ["方案", "类型", "失效价位", "方向", "规则依据", "触发后果"],
 }
+
+# 分钟分形层询问记录（04 EG-07）：跳过询问或记错答复的报告一律不得交付。
+MINUTE_ASK_ROW = "分钟分形层"
+MINUTE_ASK_VALUES = ("已询问-启用", "已询问-不启用", "未询问-环境无交互")
 
 FACTOR_NAMES = ["Guideline 得分", "结构完整度", "斐波那契共振", "道氏一致性",
                 "江恩价格共振", "江恩时间共振", "蜡烛图信号", "失效距离"]
@@ -153,7 +159,28 @@ def load_data(path_or_dash):
     return data
 
 
-def validate(data):
+def validate_minute_ask(tables, legacy_ok=False):
+    """分钟分形层询问答复必须留下唯一且合法的记录；返回该值供图组交叉核对。
+
+    legacy_ok 仅供重嵌旧归档使用：旧报告没有该行时返回 None 并提示，
+    新报告生成路径（gen_report_md/web）保持严格，缺行即拒绝。
+    """
+    rows = [r for r in tables["分析前提"] if str(r.get("项", "")).strip() == MINUTE_ASK_ROW]
+    if len(rows) != 1:
+        if legacy_ok and not rows:
+            print("[提示] 旧归档报告缺少'%s'询问记录，按旧归档兼容重嵌（不做记录↔图组核对）"
+                  % MINUTE_ASK_ROW, file=sys.stderr)
+            return None
+        fail("分析前提表须有且仅有一行'%s'（04 EG-07 强制询问记录，取值：%s）"
+             % (MINUTE_ASK_ROW, "、".join(MINUTE_ASK_VALUES)))
+    value = str(rows[0].get("内容", "")).strip()
+    if value not in MINUTE_ASK_VALUES:
+        fail("%s 记录须为 %s 之一，收到: %r"
+             % (MINUTE_ASK_ROW, "、".join(MINUTE_ASK_VALUES), value))
+    return value
+
+
+def validate(data, legacy_ok=False):
     """校验 data.json 并返回 (名称, 代码, 时间戳)；失败即 fail()。"""
     name = validate_component(data.get("标的名称", ""), "标的名称")
     code = validate_component(data.get("标的代码", ""), "标的代码")
@@ -211,6 +238,7 @@ def validate(data):
     if not any(str(r.get("项", "")).strip() == "细分深度来源"
                for r in tables.get("分析前提", [])):
         fail("分析前提表缺少'细分深度来源'行（06 R35 / 09 D37 强制披露）")
+    validate_minute_ask(tables, legacy_ok=legacy_ok)
 
     mode = data.get("报告模式")
     if mode not in ("标准", "单方案防御"):
@@ -247,11 +275,13 @@ def validate(data):
         if finite_number(row["失效价位"], "失效价位") <= 0:
             fail("失效价位须大于零")
         basis = str(row["规则依据"])
-        ids = re.findall(r"\bR(\d+)\b", basis)
-        if any(not 1 <= int(n) <= 35 for n in ids):
-            fail("失效价位引用未知规则编号")
-        if kind == "规则失效" and not set(ids) & {"5", "6", "7", "17", "29"}:
-            fail("规则失效须引用可推导数值边界的 R5/R6/R7/R17/R29，结构身份与流程规则不能单独生成价位")
+        ids = rule_ids.rule_ids(basis)
+        if kind == "规则失效":
+            if not ids:
+                fail("规则失效须给出规则编号（如 R-IMP-07 或 R5）")
+            if not ids & rule_ids.DERIVABLE_RULES:
+                fail("规则失效须引用可推导数值边界的 R-IMP-07/08/09/10（兼容 R5/R6/R7）；"
+                     "失败浪、通道等结构预期请登记为“结构失效”")
         if not basis.strip() or not str(row["触发后果"]).strip():
             fail("失效价位须有依据与触发后果")
         if kind != "观察位":
@@ -299,26 +329,55 @@ def render_web_premise(data):
 
 
 def web_wave_pattern(wave):
-    """有内部组时采用其浪型；未定细型仅列该方案要求的候选类型。"""
-    labels = {"impulse": "推动浪", "diagonal": "楔形", "zigzag": "锯齿调整", "flat": "平台调整",
-              "triangle": "三角形调整", "double_combination": "双重组合调整", "triple_combination": "三重组合调整"}
+    """有内部组时采用其浪型；未定细型仅列该方案要求的候选类型。中英文专业命名严密区分驱动与推动。"""
+    labels = {
+        "impulse": "推动浪 (Impulse)",
+        "diagonal": "倾斜三角形/斜纹浪 (Diagonal)",
+        "motive": "驱动五浪 (Motive)",
+        "zigzag": "锯齿调整浪 (Zigzag)",
+        "flat": "平台调整浪 (Flat)",
+        "triangle": "三角形调整浪 (Triangle)",
+        "double_combination": "双重组合调整 (Double Combination)",
+        "triple_combination": "三重组合调整 (Triple Combination)",
+    }
     pattern = wave.get("pattern", "unknown")
-    label = labels.get(pattern)
-    if label is None:
-        parent_pattern = wave.get("component_pattern")
-        component = wave["path"].rsplit("-", 1)[-1]
-        if parent_pattern == "impulse":
-            label = "推动" if component in ("1", "3", "5") else "修正"
-        elif parent_pattern == "zigzag":
-            label = "推动" if component in ("A", "C") else "修正"
-        elif parent_pattern == "flat":
-            label = "推动" if component == "C" else "修正"
-        elif parent_pattern in ("triangle", "double_combination", "triple_combination"):
-            label = "修正"
+    parent_pattern = wave.get("component_pattern")
+    component = wave["path"].rsplit("-", 1)[-1]
+
+    # 特殊处理调整浪内部的作用子浪（如平台/锯齿 C 浪，或锯齿 A 浪）：
+    # 在理论层级上属于调整浪的驱动子浪（Motive Subwave），绝不能混同为大级别的单立推动浪（Impulse）
+    if parent_pattern in ("flat", "zigzag") and component == "C":
+        if pattern in ("impulse", "motive"):
+            label = "C浪驱动五浪 (Motive C-wave)"
+        elif pattern == "diagonal":
+            label = "终结倾斜三角形 (Ending Diagonal C-wave)"
         else:
-            return "未定"
-        label += "，细型未定"
-    if wave["completion_status"] != "confirmed_complete":
+            label = "C浪驱动模式 (Motive C-wave，细型未定)"
+    elif parent_pattern == "zigzag" and component == "A":
+        if pattern in ("impulse", "motive"):
+            label = "A浪驱动五浪 (Motive A-wave)"
+        elif pattern == "diagonal":
+            label = "引导倾斜三角形 (Leading Diagonal A-wave)"
+        else:
+            label = "A浪驱动模式 (Motive A-wave，细型未定)"
+    elif parent_pattern == "flat" and component == "A":
+        label = labels.get(pattern, "A浪调整 (Corrective A-wave)")
+    elif component == "B":
+        label = labels.get(pattern, "B浪调整 (Corrective B-wave)")
+    else:
+        label = labels.get(pattern)
+        if label is None:
+            if parent_pattern == "impulse":
+                label = "驱动模式 (Motive Mode)" if component in ("1", "3", "5") else "调整模式 (Corrective Mode)"
+            elif parent_pattern in ("zigzag", "flat"):
+                label = "驱动模式 (Motive Mode)" if component in ("A", "C") else "调整模式 (Corrective Mode)"
+            elif parent_pattern in ("triangle", "double_combination", "triple_combination"):
+                label = "调整模式 (Corrective Mode)"
+            else:
+                return "未定"
+            label += "，细型未定"
+
+    if wave.get("completion_status") != "confirmed_complete":
         label += "（候选）"
     return label
 
