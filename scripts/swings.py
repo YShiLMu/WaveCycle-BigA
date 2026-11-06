@@ -31,7 +31,7 @@ RETRACES = (0.236, 0.382, 0.5, 0.618, 0.786)
 EXTENSIONS = (1.0, 1.272, 1.618, 2.0, 2.618)
 
 
-def load_ohlc(path):
+def load_ohlc_rows(path):
     """读 CSV（date,open,high,low,close[,volume]），# 开头注释行跳过。
     按表头列名映射列位置（列序无关，防列序错位时按位置错读）；缺必需列即报错。
     返回 (rows, has_volume)；rows 元素为 (date, o, h, l, c[, volume])。
@@ -318,7 +318,7 @@ def main(argv=None):
         except ValueError as exc:
             p.error(str(exc))
 
-    rows, has_volume = load_ohlc(args.csv)
+    rows, has_volume = load_ohlc_rows(args.csv)
     rows = [(normalize_date(r[0]), *r[1:]) for r in rows]
     intraday = any(has_clock(r[0]) for r in rows)
     if args.weekly and intraday:

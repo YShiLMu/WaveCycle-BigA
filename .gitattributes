@@ -1,0 +1,7 @@
+# 行尾由 Git 自动判断；显式声明二进制，避免图片 diff 噪声。
+* text=auto
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary

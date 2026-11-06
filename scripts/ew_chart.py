@@ -197,7 +197,6 @@ def _draw_candles(ax, df, last_n=None, t=THEMES["dark"]):
     """
     if last_n is not None:
         df = df.tail(last_n)
-    x = range(len(df))
     width = 0.6
     up_c, down_c = t["up"], t["down"]
     for i, (_, row) in enumerate(df.iterrows()):
@@ -650,7 +649,6 @@ def _draw_channels(ax, plot_df, base, channels, t, fs):
     斜率通常很陡，若全幅延伸会把坐标轴撑爆（Y 轴被压到顶部）。区间内绘制能稳定
     显示通道斜率，且不破坏其它 K 线的可视范围。连线最细（1px）且半透明，避免压 K 线。
     """
-    span = plot_df["high"].max() - plot_df["low"].min() or 1.0
     n = len(plot_df)
     for idx1_hi, idx3_hi, idx2_low in channels:
         g1, g3, g2 = idx1_hi - base, idx3_hi - base, idx2_low - base
@@ -667,7 +665,6 @@ def _draw_channels(ax, plot_df, base, channels, t, fs):
         top_intercept = p1_y - slope * g1
         # 下轨：过 2 浪低点，与上轨平行（斜率相同）
         bot_intercept = plot_df.iloc[g2]["low"] - slope * g2
-        g2_y = plot_df.iloc[g2]["low"]
         for intercept, lw in ((bot_intercept, 1.0), (top_intercept, 1.0)):
             ax.plot([x0, x1], [slope * x0 + intercept, slope * x1 + intercept],
                     color=t["channel"], linestyle="-", linewidth=lw, alpha=0.75,
@@ -727,7 +724,6 @@ def _draw_wave_legend(ax, big_seq, sub_groups, t, fs, row_h=_BOTTOM_ROW_H):
     # 底部浪型区只列 第 1 层(大级别) + 第 2 层 子浪；第 3 层及更深(1-1-1…)仅画线、不进底部文本（避免图过高）
     for lvl in sorted(k for k in sub_groups if k == 2):
         cols.append(("%d级" % lvl, sub_groups[lvl]))
-    n = len(cols)
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")

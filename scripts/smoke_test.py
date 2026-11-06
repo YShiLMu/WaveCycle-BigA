@@ -40,11 +40,9 @@ import subprocess
 import sys
 import tempfile
 
-from naming import IMAGE_KEYS, chart_png
+from naming import IMAGE_KEYS, IMAGE_PLACEHOLDERS, chart_png
 
 import pandas as pd
-
-from naming import HTML_TOKENS, IMAGE_KEYS, IMAGE_PLACEHOLDERS
 
 import report_common as rc
 
@@ -133,6 +131,8 @@ def gen_html(path):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="wavecycle 三脚本冒烟测试")
     parser.add_argument("--keep", action="store_true", help="保留临时产物目录")
+    parser.add_argument("--dev-root", action="store_true",
+                        help="从源码树运行：把 05_模板_templates 映射成临时 assets（仅开发用）")
     args = parser.parse_args(argv)
 
     for stream in (sys.stdout, sys.stderr):
@@ -141,14 +141,29 @@ def main(argv=None):
         except AttributeError:
             pass
 
+    tmp = tempfile.mkdtemp(prefix="wavecycle_smoke_")
+    print("临时目录：%s" % tmp)
+
+    global HTML_TEMPLATE
+    if args.dev_root:
+        # 源码树没有 assets/：把源模板按打包名复制到临时 assets，供子进程解析。
+        assets = os.path.join(tmp, "assets")
+        os.makedirs(assets, exist_ok=True)
+        source_assets = os.path.join(os.path.dirname(HERE), "05_模板_templates")
+        for source_name, target_name in (
+                ("05_网页报告_web_report.html", "网页报告_web_report.html"),
+                ("01_分析报告_report.md", "分析报告_report.md")):
+            shutil.copy2(os.path.join(source_assets, source_name),
+                         os.path.join(assets, target_name))
+        os.environ["WAVECYCLE_ASSETS"] = assets
+        HTML_TEMPLATE = rc.template_path(HERE, "网页报告_web_report.html")
+
     # 执行根不对时先停：缺 assets/ 是安装位置问题，不是依赖问题，避免被当成缺包深挖脚本
     if not os.path.isfile(HTML_TEMPLATE):
         print(rc.missing_asset_message(HTML_TEMPLATE, HERE), file=sys.stderr)
         print("\nSMOKE FAILED：技能资源缺失（执行根不对，不是依赖或环境问题）")
         return 1
 
-    tmp = tempfile.mkdtemp(prefix="wavecycle_smoke_")
-    print("临时目录：%s" % tmp)
     csv_path = os.path.join(tmp, "sample.csv")
     rows = gen_csv(csv_path)
     last_close = rows[-1][4]

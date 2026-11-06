@@ -30,7 +30,7 @@ import base64
 import math
 import html
 
-from naming import IMAGE_PLACEHOLDERS, validate_component
+from naming import validate_component
 import rule_ids
 from analysis_scope import validate_scope, scope_tables, endpoint_chain, position_tables
 
@@ -148,7 +148,10 @@ INSTALLED_SCRIPTS = os.path.join(os.path.expanduser("~"), ".agents", "skills", "
 
 
 def template_path(script_dir, filename):
-    """技能模板路径 = <技能根>/assets/<filename>；技能根即脚本所在目录的上一级。"""
+    """技能模板路径：优先 WAVECYCLE_ASSETS（开发冒烟临时 assets），否则 <技能根>/assets。"""
+    override = os.environ.get("WAVECYCLE_ASSETS")
+    if override:
+        return os.path.normpath(os.path.join(override, filename))
     return os.path.normpath(os.path.join(os.path.dirname(script_dir), ASSET_DIRNAME, filename))
 
 
