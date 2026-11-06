@@ -30,7 +30,12 @@ cp -r wavecycle ~/.agents/skills/    # 通用技能目录；ZCode 亦识别 ~/.z
 
 ## 前置依赖
 
-> **以下两条是硬性要求，缺一不可。**
+![Python 3.10 或 3.11](https://img.shields.io/badge/Python-3.10%20%7C%203.11-red?style=flat-square&logo=python&logoColor=white)
+![pandas](https://img.shields.io/badge/pandas-必装-red?style=flat-square&logo=pandas&logoColor=white)
+![matplotlib](https://img.shields.io/badge/matplotlib-必装-red?style=flat-square&logo=matplotlib&logoColor=white)
+
+> [!CAUTION]
+> **以下两条是硬性要求，缺一不可，装错了技能直接跑不起来。**
 >
 > 1. **必须安装 Python 3.10 或 3.11**。其他版本（3.9 及更早、3.12 及以上）未经验证，可能因第三方依赖装不上而跑不起来。
 > 2. **必须安装两个库：`pandas` 与 `matplotlib`**。技能的分析脚本（取数、锚点检测、绘图、校验）全部依赖它们，缺任何一个都会直接报错。
