@@ -36,7 +36,8 @@ import hashlib
 from html.parser import HTMLParser
 from PIL import Image
 
-from naming import HTML_TOKENS, IMAGE_KEYS, MINUTE_IMAGE_KEYS
+from naming import (ARCHIVE_TMP_DIR, ARCHIVE_TMP_MAX_BYTES, HTML_TOKENS,
+                    IMAGE_KEYS, MINUTE_IMAGE_KEYS)
 
 MINUTE_KEYS = {key for key, _fn in MINUTE_IMAGE_KEYS}
 MAIN_MINUTE_KEYS = {key for key in MINUTE_KEYS if key.startswith("主方案")}
@@ -131,6 +132,36 @@ def data_uri(png_path: pathlib.Path) -> str:
 def minute_group_consistent(record, has_minute):
     """分钟分形层询问记录与图组必须一致：已询问-启用 ⟺ 有分钟图（04 EG-07）。"""
     return (record == "已询问-启用") == bool(has_minute)
+
+
+def validate_archive_layout(folder: pathlib.Path, allow_extra=False):
+    """D57/D66：归档根层只允许两文档 + 图表/ + 临时文件/；临时目录 ≤5 MB。
+
+    allow_extra 仅供旧归档迁移期临时豁免，正式交付不得使用。
+    """
+    if not allow_extra:
+        allowed_dirs = {"图表", ARCHIVE_TMP_DIR}
+        extra = []
+        for entry in folder.iterdir():
+            name = entry.name
+            if entry.is_dir() and name in allowed_dirs:
+                continue
+            is_report = ((name.startswith("分析报告_") and name.endswith(".md"))
+                         or (name.startswith("网页报告_") and name.endswith(".html")))
+            if entry.is_file() and is_report:
+                continue
+            extra.append(name)
+        if extra:
+            raise SystemExit(
+                "[校验失败] 归档根层存在非法散落条目（D57）：%s；"
+                "过程状态请移入 %s/，或清理后重试" % ("、".join(sorted(extra)), ARCHIVE_TMP_DIR))
+    tmp_dir = folder / ARCHIVE_TMP_DIR
+    if tmp_dir.is_dir():
+        total = sum(path.stat().st_size for path in tmp_dir.rglob("*") if path.is_file())
+        if total > ARCHIVE_TMP_MAX_BYTES:
+            raise SystemExit(
+                "[校验失败] %s/ 共 %.1f MB，超过单归档 5 MB 上限（D66）：%s"
+                % (ARCHIVE_TMP_DIR, total / 1024 / 1024, tmp_dir))
 
 
 def locate_assets(folder: pathlib.Path):
@@ -315,14 +346,17 @@ def validate(md_text: str, html_text: str, images, keep_absolute: bool):
 
 def main():
     ap = argparse.ArgumentParser(description="把浪型图 PNG 内嵌为 base64，输出自包含的 md/html 交付文档")
-    ap.add_argument("folder", help="分析输出文件夹（含 图表/、分析报告_*.md、网页报告_*.html）")
+    ap.add_argument("folder", help="分析输出文件夹（含 图表/、临时文件/、分析报告_*.md、网页报告_*.html）")
     ap.add_argument("--md-keep-absolute", action="store_true",
                     help="md 回退为绝对路径引用（查看器不支持 data URI 时使用），html 仍强制内嵌 base64")
+    ap.add_argument("--allow-extra", action="store_true",
+                    help="跳过归档根层散落条目校验（仅供旧归档迁移期临时使用）")
     args = ap.parse_args()
 
     folder = pathlib.Path(args.folder)
     if not folder.is_dir():
         raise SystemExit(f"[错误] 文件夹不存在：{folder}")
+    validate_archive_layout(folder, allow_extra=args.allow_extra)
     images, md_path, html_path = locate_assets(folder)
 
     md_text = embed_md(md_path, images, args.md_keep_absolute, write=False)

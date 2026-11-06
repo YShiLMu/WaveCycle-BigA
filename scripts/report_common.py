@@ -30,7 +30,7 @@ import base64
 import math
 import html
 
-from naming import validate_component
+from naming import ARCHIVE_TMP_DIR, ARCHIVE_TMP_MAX_BYTES, validate_component
 import rule_ids
 from analysis_scope import validate_scope, scope_tables, endpoint_chain, position_tables
 

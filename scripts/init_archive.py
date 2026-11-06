@@ -3,7 +3,8 @@
 
 把归档规范（SKILL.md「输出归档」）编码成工具：一次命令创建
   <root>/<标的名称>_<代码>_<YYYYMMDD>_<HHMM>/
-  └── 图表/
+  ├── 图表/
+  └── 临时文件/
 并打印两个交付文档的标准文件名，禁止再手工命名。
 
 用法：
@@ -26,7 +27,7 @@ import os
 import re
 import sys
 
-from naming import IMAGE_FILENAMES, doc_names, validate_component
+from naming import ARCHIVE_TMP_DIR, IMAGE_FILENAMES, doc_names, validate_component
 
 
 def main(argv=None):
@@ -83,6 +84,7 @@ def main(argv=None):
     if os.path.exists(folder) and not args.force and not args.existing_dir:
         raise SystemExit("[错误] 归档文件夹已存在（更新写回请加 --force 并确认是同一标的）: %s" % folder)
     os.makedirs(os.path.join(folder, "图表"), exist_ok=True)
+    os.makedirs(os.path.join(folder, ARCHIVE_TMP_DIR), exist_ok=True)
 
     if args.print_stamp:
         print(stamp)
@@ -93,6 +95,8 @@ def main(argv=None):
 
     print("[OK] 归档文件夹: %s" % os.path.abspath(folder))
     print("     图表目录: %s" % os.path.abspath(os.path.join(folder, "图表")))
+    print("     临时目录: %s（data.json 等过程状态，单归档 ≤5 MB）"
+          % os.path.abspath(os.path.join(folder, ARCHIVE_TMP_DIR)))
     print("     交付文档（标准命名，禁止改动）：")
     for doc in doc_names(name, code, stamp):
         print("       - " + os.path.join(folder, doc))

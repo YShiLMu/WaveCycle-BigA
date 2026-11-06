@@ -39,6 +39,10 @@ MINUTE_VIEWS = ("60m", "30m", "15m")
 REPORT_MD_TPL = "分析报告_%s_%s_%s.md"
 WEB_HTML_TPL = "网页报告_%s_%s_%s.html"
 
+# 归档过程状态目录（D57/D66）：唯一允许写入归档根层的非交付目录
+ARCHIVE_TMP_DIR = "临时文件"
+ARCHIVE_TMP_MAX_BYTES = 5 * 1024 * 1024
+
 # 标的名称/代码白名单：中文/字母/数字/下划线/连字符（堵 .. 与路径分隔符注入）
 NAME_RE = re.compile(r"^[0-9A-Za-z_\u4e00-\u9fff-]+$")
 BAD_CHARS = r'\\/:*?"<>|'
