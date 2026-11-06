@@ -68,7 +68,7 @@ def inspect_interval(df, start, end, pivots):
 
 
 def verify_endpoint_source(df, endpoint, current_k, pivots):
-    """核对端点来源（06 R20 / 09 D31）：支持多尺度自适应（k=5/3/1 或局部真实极值）。"""
+    """核对端点来源（EG-05 / D31）：支持多尺度自适应（k=5/3/1 或局部真实极值）。"""
     if endpoint["pivot"]:
         return True, "命中本组k=%d摆动点" % current_k
     index, kind = endpoint["index"], endpoint["kind"]
@@ -259,18 +259,18 @@ def analyze_scheme(df, scheme, depth):
                     # 子浪绝不判违反（退出码 1）；仅大级别第一层且严格声明确认时才允许判违反
                     strict = not is_subwave and (b["completion_status"] == "confirmed_complete" or (b["completed"] and not b["explicit_status"]))
                     status = "违反" if strict else "待核对"
-                    record(full_path, "R20端点来源", status, role + "未出现在本组k=%d摆动序列（%s）；先复核窗口与选点" % (k, match_basis))
+                    record(full_path, "EG-05端点来源", status, role + "未出现在本组k=%d摆动序列（%s）；先复核窗口与选点" % (k, match_basis))
                 elif not endpoint["pivot"]:
                     # 命中了自适应更细分形或局部极值，记录提示/待核对，绝不判违反
-                    record(full_path, "R20端点来源", "待核对", role + "自适应匹配：%s（本组基准k=%d）" % (match_basis, k))
-            # R34/D39 反向摆动确认：历史已走完内部子浪或后续已有推进展开，不判硬性违反
+                    record(full_path, "EG-05端点来源", "待核对", role + "自适应匹配：%s（本组基准k=%d）" % (match_basis, k))
+            # D39 反向摆动确认：历史已走完内部子浪或后续已有推进展开，不判硬性违反
             has_subsequent = (b != resolved[-1])
             if b["completed"] and not b["confirmed"] and not b["explicit_status"]:
                 if has_subsequent or is_subwave:
-                    record(full_path, "R34/D39", "待核对",
+                    record(full_path, "D39", "待核对",
                            "历史子浪后续已有走势推进；本组k=%d尺度未提取独立反向摆动点，按交替推进认定完成候选" % k)
                 else:
-                    record(full_path, "R34/D39", "违反", "宣称已完成终点，但截止日内尚无后续反向摆动确认")
+                    record(full_path, "D39", "违反", "宣称已完成终点，但截止日内尚无后续反向摆动确认")
             elif not b["completed"]:
                 record(full_path, "形成阶段", "待核对", "未完成浪；比率仅为条件测量")
             facts[full_path] = {"path": full_path, "parent": path, "start": a, "end": b,
@@ -331,9 +331,9 @@ def analyze_scheme(df, scheme, depth):
                          segments[2]["length"] < segments[0]["length"] and r["status"] == "通过")):
                     r = dict(r, status="待确认", basis=r["basis"] + "；第三／第五浪未完成，不确认最终长度关系")
                 elif rule_ids.touch_counts(r["rule"]) and pattern == "diagonal":
-                    # 楔形/对角线例外条款：06 R8/R9/R10 允许第4浪与第1浪价格重叠
+                    # 斜纹浪例外条款：R-DIA-09 允许第4浪与第1浪价格重叠
                     if r["status"] == "违反":
-                        r = dict(r, status="通过", basis="第4浪与第1浪价格重叠（倾斜三角形/楔形 Diagonal 例外条款允许重叠，06 R8/R9/R10 / R-DIA-06/07）")
+                        r = dict(r, status="通过", basis="第4浪与第1浪价格重叠（斜纹浪 Diagonal 例外条款允许重叠，R-DIA-09）")
                     else:
                         r = dict(r, status="通过", basis=r["basis"] + "（倾斜三角形/楔形允许重叠，当前未重叠）")
                 record(path, r["rule"], r["status"], r["basis"])

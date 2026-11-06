@@ -21,7 +21,7 @@
   - 日历缺口（相邻 bar 间隔 > 3 天的区间列表，停牌/节假日由模型说明）
   - 数据根数与时间跨度（供"覆盖一个完整 5+3 循环"判断）
   - 最新 bar 日期 vs 当前日期（供"是否收盘"判断）
-  - 区间极端价位（最高 high / 最低 low + 日期，R20 口径）
+  - 区间极端价位（最高 high / 最低 low + 日期，EG-05 口径）
 
 用法：
     python data_check.py --csv data.csv [--source 腾讯fqkline] [--fq qfq]
@@ -106,7 +106,28 @@ def df_index(mask):
     return mask.index[mask]
 
 
-def run_checks(df, fq, source):
+def verify_adjust(fq, adjust):
+    """复权证据分级：返回 (状态, 说明)。状态 = verified / declared / invalid。
+
+    adjust 为取数时写入 metadata 的因子证据块；qfq 允许声明未验证并披露，
+    hfq 必须验证（方向传反不会报错，只能靠因子链约束）。
+    """
+    if fq == "none":
+        return "verified", "none：未复权数据，无需因子链"
+    if adjust is None:
+        return "declared", "%s 仅声明，未提供 adjust 因子证据块" % fq
+    if adjust.get("kind") != fq:
+        return "invalid", "adjust.kind=%r 与 --fq=%r 不一致" % (adjust.get("kind"), fq)
+    if not adjust.get("product_constant"):
+        return "invalid", "hfq×qfq 因子积不恒定"
+    if fq == "qfq" and adjust.get("qfq_last") != 1.0:
+        return "invalid", "qfq 最新因子不为 1.0（收到 %r）" % adjust.get("qfq_last")
+    if fq == "hfq" and adjust.get("hfq_first") != 1.0:
+        return "invalid", "hfq 最早因子不为 1.0（收到 %r）" % adjust.get("hfq_first")
+    return "verified", "因子链校验通过（sha256 %s…）" % str(adjust.get("factor_sha256", ""))[:12]
+
+
+def run_checks(df, fq, source, adjust=None):
     """执行全部检查，返回 (rows, facts)。
     rows: [(检查项, 判定, 说明)]；facts: 披露事实 dict（循环覆盖/缺口/极值/最新bar）。"""
     rows = []
@@ -178,8 +199,19 @@ def run_checks(df, fq, source):
             facts["calendar_gaps"] = []
 
     # ---- 4/5. 复权与数据源标注 ----
-    if fq:
-        rows.append(("复权口径已标注且全程一致", "通过", "%s（已记录声明；实际复权与全程一致性未独立验证）" % fq))
+    status, adjust_note = verify_adjust(fq, adjust)
+    facts["adjust_status"] = status
+    facts["adjust_note"] = adjust_note
+    if fq and status == "verified":
+        rows.append(("复权口径已标注且全程一致", "通过", "%s（已验证：%s）" % (fq, adjust_note)))
+    elif fq and status == "declared" and fq == "qfq":
+        rows.append(("复权口径已标注且全程一致", "通过",
+                     "%s（声明未验证；%s）" % (fq, adjust_note)))
+    elif fq and status == "declared":
+        rows.append(("复权口径已标注且全程一致", "不通过",
+                     "hfq 必须提供 adjust 因子证据块，禁止以声明代替验证"))
+    elif fq:
+        rows.append(("复权口径已标注且全程一致", "不通过", adjust_note))
     else:
         rows.append(("复权口径已标注且全程一致", "不通过",
                      "未标注（--fq 未提供）；禁止声称未核实过的复权方式"))
@@ -235,7 +267,7 @@ def main(argv=None):
         args.source, args.fq = metadata["source"], metadata["fq"]
         df = select_range(df, args.start, args.end)
         validate_ohlc(df)
-        rows, facts = run_checks(df, args.fq, args.source)
+        rows, facts = run_checks(df, args.fq, args.source, metadata.get("adjust"))
     except (ValueError, TypeError, KeyError, OSError) as exc:
         print("| 数据有效性 | 不通过 | %s |" % exc)
         return 1
@@ -258,7 +290,7 @@ def main(argv=None):
         print("1. 数据时间范围：%s 至 %s（%d 根，跨度 %d 天）"
               % (facts["date_range"][0], facts["date_range"][1], facts["n_bars"], facts["span_days"]))
         if hi is not None and lo is not None:
-            print("2. 区间极端价位（R20 极端价位口径）：最高 %.3f（%s）、最低 %.3f（%s）"
+            print("2. 区间极端价位（EG-05 极端价位口径）：最高 %.3f（%s）、最低 %.3f（%s）"
                   % (hi, hi_d, lo, lo_d))
         else:
             print("2. 区间极端价位：OHLC 存在缺失，无可靠极值可披露（见自检表不通过项）")
@@ -268,8 +300,9 @@ def main(argv=None):
                      100 * (facts["last_close"] - lo) / (hi - lo) if hi > lo else 0.0))
         else:
             print("3. 当前价格位置：极值或最新收盘缺失，分位不可算（见自检表不通过项）")
-        print("4. 复权方式 %s、数据源 %s、最新 bar %s（今天 %s，%s）"
-              % (args.fq or "未标注", args.source or "未标注", facts["last_bar"], facts["today"],
+        print("4. 复权方式 %s（%s）、数据源 %s、最新 bar %s（今天 %s，%s）"
+              % (args.fq or "未标注", facts.get("adjust_note", "未验证"),
+                 args.source or "未标注", facts["last_bar"], facts["today"],
                  "最新 bar 为今日——请判定是否已收盘" if facts["last_bar_date"] == facts["today"]
                  else "最新 bar 非今日，间隔 %d 天" % (datetime.date.fromisoformat(facts["today"])
                                                      - datetime.date.fromisoformat(facts["last_bar_date"])).days))

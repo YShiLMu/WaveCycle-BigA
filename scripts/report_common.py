@@ -290,7 +290,7 @@ def validate(data, legacy_ok=False):
         fail("data.json 表格为空或缺失: %s" % "、".join(empty_tables))
     if not any(str(r.get("项", "")).strip() == "细分深度来源"
                for r in tables.get("分析前提", [])):
-        fail("分析前提表缺少'细分深度来源'行（06 R35 / 09 D37 强制披露）")
+        fail("分析前提表缺少'细分深度来源'行（D37 强制披露）")
     validate_minute_ask(tables, legacy_ok=legacy_ok)
 
     mode = data.get("报告模式")
@@ -331,9 +331,9 @@ def validate(data, legacy_ok=False):
         ids = rule_ids.rule_ids(basis)
         if kind == "规则失效":
             if not ids:
-                fail("规则失效须给出规则编号（如 R-IMP-07 或 R5）")
+                fail("规则失效须给出规则编号（如 R-IMP-07）")
             if not ids & rule_ids.DERIVABLE_RULES:
-                fail("规则失效须引用可推导数值边界的 R-IMP-07/08/09/10（兼容 R5/R6/R7）；"
+                fail("规则失效须引用可推导数值边界的 R-IMP-07/08/09/10；"
                      "失败浪、通道等结构预期请登记为“结构失效”")
         if not basis.strip() or not str(row["触发后果"]).strip():
             fail("失效价位须有依据与触发后果")

@@ -8,21 +8,21 @@
         --waves "1:start,end:Impulse" "2:start,end:Correction:down" ^
         --path "[1]:4165:4174:4178:4223:4295:4484" ^
         --channel "4174:4223:4178" ^
-        --invalid "160:跌破 160（第 1 浪高点，R7）即失效" ^
+        --invalid "160:跌破 160（第 1 浪高点，R-IMP-10）即失效" ^
         --theme dark
 
 CSV 列：date,open,high,low,close[,volume]（date 形如 2026-08-08；读取时强制校验
 OHLC 合理性：high ≥ low ≥ 0、open/close 落在 [low, high]、日期升序无重复，坏数据报错）。
 浪段参数格式：<标注>:<起始索引>:<结束索引>:<形态备注>[:方向up/down/auto]，索引为 CSV 行号（0 起）；
 方向默认 auto = 按端点极端价位判定（终点高/低均高于起点 → 上行，均低 → 下行，
-区间重叠时回退收盘价比较，与 R20 极端价位口径一致），显式 up/down 可覆盖。
+区间重叠时回退收盘价比较，与 EG-05 极端价位口径一致），显式 up/down 可覆盖。
 --path 连续浪路径：<框标>@<索引>[:peak|:trough],... 或 <标注>:<索引>:<索引>... —— 把一组端点按序
 连成一条带箭头的连续折线（亮色细线，未走完段灰虚线），浪型文字由底部注释区呈现；端点默认按
 相邻段方向自动取 high/low，索引后加 :peak/:trough（缩写 :p/:t）强制取极值（外包线端点用）。
 --channel 推动浪平行通道：<1浪高点索引>:<3浪高点索引>:<2浪低点索引> —— 连接 1、3 浪高点
 为上轨，过 2 浪低点画平行线为下轨。
 --theme dark（默认）/ light：深色画布亮色连线，或旧浅色。
-失效价位参数格式：<价格>:<标签>，如 "160:跌破 160（第 1 浪高点，R7）即失效"。
+失效价位参数格式：<价格>:<标签>，如 "160:跌破 160（第 1 浪高点，R-IMP-10）即失效"。
 江恩扇形：--gann "起点索引:起点价格:刻度[:方向]"；加 --gann-auto-scale 时省略刻度
 （格式 "起点索引:起点价格[:方向]"），按项目默认口径 D23 自动分档，--gann-index 表示
 指数点位（固定刻度 50）。
@@ -177,7 +177,7 @@ def _level_color(lb, t):
 
 
 def _seg_direction(plot_df, s, e):
-    """段方向判定（R20 极端价位口径）：终点 high/low 均高于起点 → 上行（True），
+    """段方向判定（EG-05 极端价位口径）：终点 high/low 均高于起点 → 上行（True），
     均低于起点 → 下行（False），区间重叠时回退收盘价比较。
     --waves 的 auto 与 --path 的峰谷判定共用，禁止另写判向逻辑。s/e 为 plot_df 内部索引。"""
     hs, ls = plot_df.iloc[s]["high"], plot_df.iloc[s]["low"]
@@ -307,7 +307,7 @@ def draw_chart(df, out_path, title, waves, invalids, current_price=None,
             print(f"[警告] 浪段 {label} 索引越界，跳过", file=sys.stderr)
             continue
         xs, xe = s, e
-        # 方向判定（R20 极端价位口径）：显式 up/down 优先；auto 见 _seg_direction
+        # 方向判定（EG-05 极端价位口径）：显式 up/down 优先；auto 见 _seg_direction
         if direction == "auto":
             up = _seg_direction(plot_df, s, e)
         else:
@@ -483,9 +483,9 @@ def _price_viewport(plot_df, current_price=None, levels=None, invalids=None):
 
 
 def _geom_selfcheck(label_seq, pts):
-    """检查正式六点 0-1-2-3-4-5 路径及旧五点调试路径的交替性与 R7。
+    """检查正式六点 0-1-2-3-4-5 路径及旧五点调试路径的交替性与 R-IMP-10。
 
-    端点价取自 K 线极值（R20）；第 4 浪触及第 1 浪终点也算重叠。
+    端点价取自 K 线极值（EG-05）；第 4 浪触及第 1 浪终点也算重叠。
     返回告警文案或 None。"""
     if label_seq[:6] == ["0", "1", "2", "3", "4", "5"] and len(pts) >= 6:
         ys = [p[1] for p in pts[1:6]]
@@ -500,9 +500,9 @@ def _geom_selfcheck(label_seq, pts):
         return "1-2-3-4-5 端点未严格交替（降-升-降-升 或反向），疑似端点选取错误"
     up = w3 > w1
     if up and w4 <= w1:
-        return "R7 重叠：第 4 浪端点 %.3f 低于或触及第 1 浪终点 %.3f" % (w4, w1)
+        return "R-IMP-10 重叠：第 4 浪端点 %.3f 低于或触及第 1 浪终点 %.3f" % (w4, w1)
     if (not up) and w4 >= w1:
-        return "R7 重叠：第 4 浪端点 %.3f 高于或触及第 1 浪终点 %.3f" % (w4, w1)
+        return "R-IMP-10 重叠：第 4 浪端点 %.3f 高于或触及第 1 浪终点 %.3f" % (w4, w1)
     return None
 
 
@@ -511,7 +511,7 @@ def _draw_paths(ax, plot_df, base, paths, t, fs):
 
     paths: [([idx...], labels), ...]。labels 为每点浪标签文字（长度 1=用序号 1..n 自动，
     长度=n=逐点）。端点价格取该 K 线的极端价位：峰谷性按相邻端点段方向判
-    （R20 口径，见 _seg_direction），峰取 high、谷取 low。
+    （EG-05 口径，见 _seg_direction），峰取 high、谷取 low。
     连线：已确认段用亮色细实线（0.9px、半透明），**最后一段**（当前未走完）用灰色虚线。
     只连线、不画任何文字（K 线旁无标注，浪型文字由底部注释区呈现），
     返回子浪端点序列 sub_rows=[(label, price, date, x)] 供 draw_chart 生成浪型列表。
@@ -537,7 +537,7 @@ def _draw_paths(ax, plot_df, base, paths, t, fs):
                       file=sys.stderr)
         if len(valid) < 2:
             continue
-        # 第二遍：峰谷性按相邻端点段方向判（R20 极端价位口径，见 _seg_direction）——
+        # 第二遍：峰谷性按相邻端点段方向判（EG-05 极端价位口径，见 _seg_direction）——
         # 上行段到达点为峰（取 high）、起点为谷（取 low）；下行段对称
         pts = []
         label_seq = []
@@ -593,7 +593,7 @@ def _draw_paths(ax, plot_df, base, paths, t, fs):
                         arrowprops=dict(arrowstyle="-|>", color=seg,
                                         lw=arrow_w, shrinkA=0, shrinkB=0),
                         zorder=z_ord)
-        # 几何自检（P1-4 ②）：R7 重叠 / 端点交替性——异常时告警，供免目检判定
+        # 几何自检（P1-4 ②）：R-IMP-10 重叠 / 端点交替性——异常时告警，供免目检判定
         _msg = _geom_selfcheck(label_seq, pts)
         if _msg:
             print("[几何自检] %s" % _msg, file=sys.stderr)
@@ -963,7 +963,7 @@ def main():
                    help="浪段标注：标签:起点:终点:备注[:方向up/down/auto]。"
                         "起点/终点可为整数索引 或 YYYY-MM-DD 日期（与 --start 口径一致，"
                         "日期须为数据内交易日）；方向默认 auto=按端点极端价位判定"
-                        "（终点高/低均高于起点→上行，均低→下行，区间重叠回退收盘比较，R20 口径）；"
+                        "（终点高/低均高于起点→上行，均低→下行，区间重叠回退收盘比较，EG-05 口径）；"
                         "三段分隔符为冒号，勿用 @ 或空格；仅作大级别底图，子浪请用 --path")
     p.add_argument("--invalid", nargs="*", action="append", type=parse_price_arg, default=[],
                    help="失效价位：价格:标签（含规则编号）")

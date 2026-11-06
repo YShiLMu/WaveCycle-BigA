@@ -2,17 +2,17 @@
 # -*- coding: utf-8 -*-
 """Rule Check 数值规则判定（workflow 第 2 步第 4 节，D31 口径）。
 
-用途：对候选数法的推动浪端点做 R-IMP-07/08/09/10（旧编号 R5/R6/R7）与失败浪位置判定，输出
+用途：对候选数法的推动浪端点做 R-IMP-07/08/09/10 与失败浪位置判定，输出
 "通过/违反 + 数值依据"，消除手算误差与漏检。输入是**模型枚举出的候选
-浪段端点价格**（按 R20 极端价位口径取自 swings.py 输出），不是 CSV。
+浪段端点价格**（按 EG-05 极端价位口径取自 swings.py 输出），不是 CSV。
 
 判定范围（仅数值可判的 5 条，其余规则仍由模型逐条核对）：
-  - R-IMP-07（旧 R5）第 2 浪终点不得低于第 1 浪起点（下跌推动镜像：不得高于）
-  - R-IMP-09（旧 R6）第 3 浪不是 1/3/5 中最短
-  - R-IMP-10（旧 R7）第 4 浪终点不得进入第 1 浪价格区域（下跌镜像对称）
-  - 失败浪（旧 R17/R29；2 代不设硬公理，属结构判断）前提：第 5 浪终点未超越第 3 浪终点（ up：未创新高 /
+  - R-IMP-07 第 2 浪终点不得低于第 1 浪起点（下跌推动镜像：不得高于）
+  - R-IMP-09 第 3 浪不是 1/3/5 中最短
+  - R-IMP-10 第 4 浪终点不得进入第 1 浪价格区域（下跌镜像对称）
+  - 失败浪（2 代不设硬公理，属结构判断）前提：第 5 浪终点未超越第 3 浪终点（ up：未创新高 /
     down：未创新低）——"子浪是否完整五浪"仍由模型确认，脚本只给位置事实
-  形态类规则（R8–R16、R21–R28 等）与 R18 计数一致性不在此列，由模型判定。
+  形态类规则（R-IMP/R-DIA/R-ZZ/R-FLAT/R-CT/R-ET/R-COMB 中的非数值项）与结构计数一致性不在此列，由模型判定。
 
 用法（--wave 必须重复出现，不能用空格分隔多值；五浪全给判 5 条，只给
 1–3 判 R-IMP-07/09，只给 1–4 判到 R-IMP-10）：
@@ -22,13 +22,13 @@
 --wave 格式：标签:起点价:终点价，用冒号分隔三段：
   · 标签 = 任意不含冒号的字符串（惯例用 "1"/"2"/"3"…，可与下一段用 @ 区隔，但
     三段分隔符必须是冒号）；
-  · 起点价/终点价 = 数字（R20 极端价位口径），价格内部不得含冒号；
+  · 起点价/终点价 = 数字（EG-05 极端价位口径），价格内部不得含冒号；
   · 每个浪段一个 --wave；传多个时必须各自带 --wave 前缀，禁止 --wave "1:.." "2:.."。
 下跌推动照常给"高→低"端点，脚本按第 1 浪方向自动镜像全部规则；--dir up/down
 可显式指定。
 
 输出：markdown 表（规则|判定|依据）+ 缺浪提示；存在"违反"时退出码 1
-（方案判"规则失效"由模型按 R19 执行，脚本只标数值事实）。
+（方案判"规则失效"由模型按 R-IMP-07/08/09/10 执行，脚本只标数值事实）。
 """
 
 import argparse
@@ -125,15 +125,15 @@ def evaluate(waves, direction=None, extrema=None):
         row("R-IMP-10", "不适用", "未提供第4浪")
     if w5:
         failure = w5[2] <= w3[2] if up else w5[2] >= w3[2]
-        row("失败浪(R17/R29)", "位置满足" if failure else "位置不满足",
+        row("失败浪（结构判断）", "位置满足" if failure else "位置不满足",
             "第5浪终点 %g；第3浪终点 %g；失败浪的内部完整五浪仍须另核" % (w5[2], w3[2]))
     else:
-        row("失败浪(R17/R29)", "不适用", "未提供第5浪")
+        row("失败浪（结构判断）", "不适用", "未提供第5浪")
     return result
 
 
 def evaluate_corrective(waves, pattern="zigzag", direction=None):
-    """调整浪（A-B-C）数值规则判定（R12/R25 等）。"""
+    """调整浪（A-B-C）数值规则判定（R-ZZ-05/R-ZZ-01 等）。"""
     by_label = {w[0]: w for w in waves}
     if len(by_label) != len(waves):
         raise ValueError("浪标签重复")
@@ -165,25 +165,25 @@ def evaluate_corrective(waves, pattern="zigzag", direction=None):
     wc = by_label.get("C")
 
     if wb:
-        # R25: 调整浪方向规则：B 浪方向必须与 A 浪反向
+        # R-ZZ-01: 锯齿形三浪方向结构：B 浪方向必须与 A 浪反向
         b_up = wb[2] > wb[1]
         b_dir_ok = (b_up != up)
-        row("R25", "通过" if b_dir_ok else "违反",
+        row("R-ZZ-01", "通过" if b_dir_ok else "违反",
             "B浪方向必须与A浪反向（A浪 %s，B浪 %s）" % ("向上" if up else "向下", "向上" if b_up else "向下"))
 
         if pattern == "zigzag":
-            # R12 / R-ZIG-02: 锯齿形 B 浪终点不得越过 A 浪起点（不得回撤 100% 以上，等号允许）
+            # R-ZZ-05: 锯齿形 B 浪终点不得越过 A 浪起点（不得回撤 100% 以上，等号允许）
             b_not_breach = (wb[2] >= wa[1]) if up else (wb[2] <= wa[1])
-            row("R12", "通过" if b_not_breach else "违反",
+            row("R-ZZ-05", "通过" if b_not_breach else "违反",
                 "锯齿形B浪终点 %g；A浪起点 %g（不得越过A浪起点，等号允许）" % (wb[2], wa[1]))
     else:
-        row("R12", "待确认", "未提供B浪，暂无法验证回撤边界")
+        row("R-ZZ-05", "待确认", "未提供B浪，暂无法验证回撤边界")
 
     if wc:
-        # R25: C 浪必须与 A 浪同向
+        # R-ZZ-01: C 浪必须与 A 浪同向
         c_up = wc[2] > wc[1]
         c_dir_ok = (c_up == up)
-        row("R25-C", "通过" if c_dir_ok else "违反",
+        row("R-ZZ-01-C", "通过" if c_dir_ok else "违反",
             "C浪方向必须与A浪同向（A浪 %s，C浪 %s）" % ("向上" if up else "向下", "向上" if c_up else "向下"))
         la, lc = abs(wa[2] - wa[1]), abs(wc[2] - wc[1])
         ratio = lc / la if la > 0 else 0
@@ -193,7 +193,7 @@ def evaluate_corrective(waves, pattern="zigzag", direction=None):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="波浪规则数值检查（推动浪 R5/R6/R7/R17/R29；调整浪 R12/R25）")
+    ap = argparse.ArgumentParser(description="波浪规则数值检查（推动浪 R-IMP-07/08/09/10；调整浪 R-ZZ-01/R-ZZ-05）")
     ap.add_argument("--wave", action="append", required=True, help="重复传入 标签:起点价:终点价")
     ap.add_argument("--pattern", choices=["impulse", "zigzag", "flat"], default="impulse", help="形态类型：impulse(默认)|zigzag|flat")
     ap.add_argument("--dir", choices=["up", "down"])
@@ -206,7 +206,7 @@ def main(argv=None):
             records = evaluate(waves, args.dir)
     except ValueError as exc:
         raise SystemExit("[错误] " + str(exc)) from exc
-    print("## Rule Check 数值判定（rule_check.py，R20 极端价位口径）\n")
+    print("## Rule Check 数值判定（rule_check.py，EG-05 极端价位口径）\n")
     print("| 规则 | 判定 | 依据 |\n| --- | --- | --- |")
     for r in records:
         print("| {rule} | {status} | {basis} |".format(**r))

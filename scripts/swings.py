@@ -17,7 +17,7 @@
   python swings.py --csv data/881133.csv --fib "3148.56:5666.35:4234.12"
 
 口径：
-  - 摆动判定一律用含影线的最高/最低价（references/rules.md R20）；
+  - 摆动判定一律用含影线的最高/最低价（references/rules.md EG-05）；
   - 索引为 0 起、相对**原始 CSV**的行号（--start/--end 只过滤分析范围，不改变索引基准；
     --weekly 时另输出"周线序号"，但 --chart-args 始终给日线索引）；
   - 去重规则：相邻同型摆动保留更极端者；最终输出严格 H/L 交替。
@@ -295,12 +295,12 @@ def main(argv=None):
                         "--chart-args 输出的索引仍是日线 CSV 行索引")
     p.add_argument("--chart-args", action="store_true",
                    help="输出 ew_chart.py 可粘贴的 --pivot 参数串（标签留 ? 待填，"
-                        "含 peak/trough 定位，按极端价位 R20 口径）")
+                        "含 peak/trough 定位，按极端价位 EG-05 口径）")
     p.add_argument("--tail", type=int, default=None,
                    help="只输出最近 N 个摆动点（表与参数串均生效）")
     p.add_argument("--path", default=None, metavar="标签@日期,...",
                    help="把选定的浪端点(标签@日期)转成 ew_chart --path 索引串：按日期在摆动点中定位"
-                        "(须为 swings 含影线极值，R20；分钟级端点须带时刻精确匹配 'YYYY-MM-DD HH:MM')，"
+                        "(须为 swings 含影线极值，EG-05；分钟级端点须带时刻精确匹配 'YYYY-MM-DD HH:MM')，"
                         "校验索引严格递增，首点即起画点(ew_chart --start)；"
                         "索引由脚本定，禁止手填。例：--path \"1@2024-02-06,2@2026-06-30\"")
     p.add_argument("--dow", action="store_true",
@@ -368,7 +368,7 @@ def main(argv=None):
         out = out[-args.tail:]
 
     mode = "周线聚合（摆动=周内极端价所在交易日）" if args.weekly else ("分钟" if intraday else "日线")
-    print("== 摆动点（k=%d，%s，共 %d 个；索引=CSV 绝对行号，R20 含影线口径）=="
+    print("== 摆动点（k=%d，%s，共 %d 个；索引=CSV 绝对行号，EG-05 含影线口径）=="
           % (args.k, mode, len(out)))
     prev = None
     for idx, date, price, kind, _ in out:
@@ -408,7 +408,7 @@ def main(argv=None):
             d = normalize_date(d)
             hit = next((o for o in out if match_point_date(o[1], d)), None)
             if hit is None:
-                raise SystemExit("[错误] 日期 %s 不在摆动点中（端点须为 swings 含影线极值，R20）：%s"
+                raise SystemExit("[错误] 日期 %s 不在摆动点中（端点须为 swings 含影线极值，EG-05）：%s"
                                  % (d, label))
             seq.append((label, hit[0], hit[1]))
         idxs = [i for _l, i, _d in seq]

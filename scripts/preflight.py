@@ -5,7 +5,7 @@
 把 workflow 第 1 步的三个必跑脚本串成一条命令，减少模型多次调用往返：
   1. data_check.py        数据自检表 + 数据基准四要素（D28）
   2. swings.py --dow      摆动点/行索引/斐波比率 + 道氏状态读数（D30）
-  3. key_levels.py        三类技术分析锚点（D27，R32）
+  3. key_levels.py        三类技术分析锚点（D27）
 
 失败策略：data_check 退出码非 0（存在"不通过"项）**立即终止**，不跑后续
 脚本（与 01 分析市场 1.5 节"禁止带病数据进入数浪"一致）；其余脚本失败
@@ -118,7 +118,7 @@ def main(argv=None):
         return code
 
     if not args.no_key_levels:
-        print("\n== preflight 3/3：key_levels（三类技术分析锚点，D27/R32）==")
+        print("\n== preflight 3/3：key_levels（三类技术分析锚点，D27）==")
         kl_args = ["--csv", args.csv]
         if args.key_levels_args:
             kl_args += args.key_levels_args.split()
@@ -133,7 +133,7 @@ def main(argv=None):
         print("\n（compact 默认口径：swings --tail 40、key_levels --max-levels 30，省略行数见各节披露行；"
               "全量用 --no-compact，或单项 --tail 0 / --key-levels-args \"--max-levels 0\"）")
     print("\n== preflight 完成：分析前提就绪，可进入 02 数浪"
-          "（趋势方向与大级别框架由模型按道氏读数 + 结构判定输出，锚点禁反转已定方向，R32）==")
+          "（趋势方向与大级别框架由模型按道氏读数 + 结构判定输出，锚点禁反转已定方向，D27）==")
     return 0
 
 

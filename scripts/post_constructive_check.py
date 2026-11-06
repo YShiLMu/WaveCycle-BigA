@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""2-4 趋势线两阶段确认（Neely Post-Constructive，07 G28 / D36 口径）。
+"""2-4 趋势线两阶段确认（Neely Post-Constructive，D36 口径）。
 
 用途：推动浪走完后，用后续行为核对数法可信度。**定位：可信度参考**
-（按既有评分接口记录，不新增分值；不产生失效价位，失效价位由 06 R19/R20 承担）。
+（按既有评分接口记录，不新增分值；不产生失效价位，失效价位由 R-IMP-07/08/09/10 与 EG-05 承担）。
 输入是模型枚举的推动浪关键端点（日期:价）+ 原始 K 线 CSV，脚本做两阶段判定。
 
 Stage 1（时间）：画穿过第 2、4 浪终点的 2-4 趋势线，看第 5 浪结束后市场是否在
@@ -49,7 +49,7 @@ def line_at(row, r2, p2, r4, p4):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="2-4 趋势线两阶段确认（07 G28 / D36）")
+    ap = argparse.ArgumentParser(description="2-4 趋势线两阶段确认（D36）")
     ap.add_argument("--csv", required=True, help="原始 OHLC CSV（date,open,high,low,close）")
     ap.add_argument("--w1", required=True, help="第 1 浪「起点价:终点价」（用于判方向）")
     ap.add_argument("--w2", required=True, help="第 2 浪终点「日期:价」")
@@ -157,7 +157,7 @@ def main(argv=None):
         s2_note = "扫描内无有效回撤数据"
         stage2_ok = None
 
-    print("## 2-4 趋势线两阶段确认（post_constructive_check.py，07 G28 / D36 口径）\n")
+    print("## 2-4 趋势线两阶段确认（post_constructive_check.py，D36 口径）\n")
     print("| Stage | 判定 | 依据 |")
     print("| --- | --- | --- |")
     print("| Stage 1（时间） | %s | %s |" % ("符合" if stage1_ok else ("待确认" if stage1_ok is None else "不完全"), note))
@@ -169,8 +169,8 @@ def main(argv=None):
         print("\n> Stage 1证据不足：不得标为Neely已确认完成。")
     print("\n> 按K线序号计时、含影线极值检查穿线；扫描上限不是统一完成期限。"
           "Stage2仅列观察值和条件，第五浪延长的‘符合’只表示当前观察到的深度符合延续条件。"
-          "脚本不证明内部完成、延长类型或父级位置；按既有G21说明证据，不新增分值，"
-          "不产生失效价位（06 R19/R20）。")
+          "脚本不证明内部完成、延长类型或父级位置；按既有八因子接口说明证据，不新增分值，"
+          "不产生失效价位（R-IMP-07/08/09/10 / EG-05）。")
     return 0
 
 

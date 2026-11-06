@@ -44,7 +44,7 @@ description: 观复 WaveCycle（波浪+道氏+江恩+蜡烛图） · 艾略特�
 
 ### 第 1 步 分析市场
 
-读取数据 → **分析前提三件套必跑 `scripts/preflight.py` 单入口**（`--csv <路径> --metadata <同stem.metadata.json> --require-metadata` 一次产出：数据自检表+四要素（D28，data_check 不通过即终止禁止带病数浪）→ 摆动点/行索引+道氏状态读数（D30，3 点判 2 点定+DO4 事实，翻转裁决仍按 D22/DO5 由模型）→ 三类锚点（D27/R32）；也可单独跑 `scripts/data_check.py`、`scripts/swings.py --dow`、`scripts/key_levels.py`）。元信息须含 source、fq、as_of、timezone、csv_sha256；`--source`／`--fq` 与元信息冲突会阻断，旧式仅声明不作为正式数据基准。→ 判定趋势方向（**道氏口径先行**：按**高一层级指数**（个股→大盘+板块、板块→大盘，见 `references/dow.md`）的高低点结构输出"道氏趋势状态"（牛市/熊市/震荡）+ 指数互证核对，再与波浪结构判定对照）→ 选择并声明分析级别 → 提取技术分析锚点（前高前低、跳空缺口、多日未破压力/支撑位三类由脚本产出；趋势线由模型基于脚本摆动点连线并披露端点——作为数浪与失效价位的锚）（见 `references/workflow.md` 第 1 步）。摆动点与 CSV 行索引用 `scripts/swings.py` 产出（分形 Pivot、`--weekly` 周线聚合供道氏判定、`--fib` 斐波比率、`--chart-args` 输出 ew_chart 可粘贴的 `--pivot` 参数串），道氏周线判定与 ew_chart 索引定位均以它为准，禁止手写临时脚本重复计算。道氏状态只做数浪先验倾斜，不否决任何数法。
+读取数据 → **分析前提三件套必跑 `scripts/preflight.py` 单入口**（`--csv <路径> --metadata <同stem.metadata.json> --require-metadata` 一次产出：数据自检表+四要素（D28，data_check 不通过即终止禁止带病数浪）→ 摆动点/行索引+道氏状态读数（D30，3 点判 2 点定+DO4 事实，翻转裁决仍按 D22/DO5 由模型）→ 三类锚点（D27）；也可单独跑 `scripts/data_check.py`、`scripts/swings.py --dow`、`scripts/key_levels.py`）。元信息须含 source、fq、as_of、timezone、csv_sha256；`--source`／`--fq` 与元信息冲突会阻断，旧式仅声明不作为正式数据基准。→ 判定趋势方向（**道氏口径先行**：按**高一层级指数**（个股→大盘+板块、板块→大盘，见 `references/dow.md`）的高低点结构输出"道氏趋势状态"（牛市/熊市/震荡）+ 指数互证核对，再与波浪结构判定对照）→ 选择并声明分析级别 → 提取技术分析锚点（前高前低、跳空缺口、多日未破压力/支撑位三类由脚本产出；趋势线由模型基于脚本摆动点连线并披露端点——作为数浪与失效价位的锚）（见 `references/workflow.md` 第 1 步）。摆动点与 CSV 行索引用 `scripts/swings.py` 产出（分形 Pivot、`--weekly` 周线聚合供道氏判定、`--fib` 斐波比率、`--chart-args` 输出 ew_chart 可粘贴的 `--pivot` 参数串），道氏周线判定与 ew_chart 索引定位均以它为准，禁止手写临时脚本重复计算。道氏状态只做数浪先验倾斜，不否决任何数法。
 
 ### 第 2 步 数浪
 
@@ -58,7 +58,7 @@ description: 观复 WaveCycle（波浪+道氏+江恩+蜡烛图） · 艾略特�
 
 ### 第 3 步 验证数浪
 
-执行**双轨绝对门禁审查**（`references/checklists.md`）：第一轨波浪 48 条硬公理核验 + 第二轨 6 大工程合规门禁核验 → 跨流派四维交叉印证（道氏/江恩/蜡烛图/事后行为）→ 冲突最高宪法仲裁 → 八因子量化打分（`scripts/score.py`）→ 主备晋级裁决与仓位闸门对照；**只验证仲裁，不修改数法**（见 `references/workflow.md` 第 3 步）。
+执行**双轨绝对门禁审查**（`references/checklists.md`）：第一轨波浪 48 条硬公理核验 + 第二轨 6 大工程合规门禁核验 → 跨流派四维交叉印证（道氏/江恩/蜡烛图/事后行为；事后行为用 `scripts/post_constructive_check.py`，单浪归口用 `scripts/monowave_judge.py`，功率评级用 `scripts/power_rating.py`）→ 冲突最高宪法仲裁 → 八因子量化打分（`scripts/score.py`）→ 主备晋级裁决与仓位闸门对照；**只验证仲裁，不修改数法**（见 `references/workflow.md` 第 3 步）。
 
 ### 第 4 步 生成报告
 

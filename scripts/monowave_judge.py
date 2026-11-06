@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""单浪归口（Neely Pre-Constructive，06 R33 / 09 D33-D34 口径）。
+"""单浪归口（Neely Pre-Constructive，D33/D34 口径）。
 
 用途：按给定观察段端点计算m2/m1（及可选m0/m1），输出Neely Rule 1–7条件分档。
 m1可以是单浪或已压缩形态；m0/m2可由一个或奇数个单浪组成。观察段须由调用者
 按原书Rules of Observation选定并记录确认时刻；脚本不验证其选取或完整行为期。
-端点价格遵守项目R20口径，输入不是CSV。
+端点价格遵守项目 EG-05 口径，输入不是CSV。
 
-分档边界见06 R33 / D33；Condition、Category及行为期须另行核对原书和完整序列。
+分档边界见 D33/D34；Condition、Category及行为期须另行核对原书和完整序列。
 用法：
     python monowave_judge.py --m1 "100:200" --m2 "200:120" --m0 "130:100"
 输出：给定端点的长度、比率和条件Rule分档；行为期始终待核对，不推断完成或终止。
@@ -55,7 +55,7 @@ def rule_of(ratio):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="单浪归口（06 R33 / D33-D34）")
+    ap = argparse.ArgumentParser(description="单浪归口（D33/D34）")
     ap.add_argument("--m1", required=True, help="m1 浪端点「起点价:终点价」")
     ap.add_argument("--m2", required=True, help="m2 观察段端点（可含奇数个单浪）「起点价:终点价」")
     ap.add_argument("--m0", default=None, help="可选 m0 观察段端点「起点价:终点价」（前观察段）")
@@ -83,7 +83,7 @@ def main(argv=None):
     rule = rule_of(ratio)
     dlabel = "待核对（缺行为期序列）"
 
-    print("## 单浪归口（monowave_judge.py，06 R33 / D33-D34 口径）\n")
+    print("## 单浪归口（monowave_judge.py，D33/D34 口径）\n")
     print("| m1 长度 | m2 长度 | m2/m1 回撤% | 条件Rule分档 | 行为期状态 |")
     print("| --- | --- | --- | --- | --- |")
     print("| %.3f | %.3f | %.2f%% | %s | %s |"
@@ -99,12 +99,12 @@ def main(argv=None):
         l0 = move_len(m0)
         if l1:
             r0 = l0 / l1 * 100.0
-            print("\n| m0/m1 比例 | %.2f%% |（Condition 字母与 Category 需对照原书表，06 R33）|"
+            print("\n| m0/m1 比例 | %.2f%% |（Condition 字母与 Category 需对照原书表，D33/D34）|"
                   % r0)
             print("> 注：m0/m1 用于 Condition 标识，本脚本给数值、不硬编字母。")
 
-    print("\n> 边界：单浪归口（R33）粒度与 R5–R7（整浪铁律）不同；"
-          "Rule 1–7 是 Neely 分档名，非项目 R1–R7；未计算完整 Condition/Category 或结构序列。"
+    print("\n> 边界：单浪归口（D33/D34）粒度与 R-IMP-07/09/10（整浪铁律）不同；"
+          "Rule 1–7 是 Neely 分档名，不是项目规则编号；未计算完整 Condition/Category 或结构序列。"
           "观察段端点及其确认时刻须另行核对，条件分档不证明正式归口通过；任意一次回撤不能确认整个行为期或其终止；Directional/Non-Directional 与 Impulsive/Corrective 是不同维度。")
     return 0
 

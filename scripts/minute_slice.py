@@ -83,11 +83,11 @@ def fetch_tencent_minute(code, freq):
         with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except (OSError, ValueError) as exc:
-        raise SystemExit("[错误] 腾讯 mkline 取数失败（%s）：%s——按 G12 披露缺证，禁止编造" % (code, exc))
+        raise SystemExit("[错误] 腾讯 mkline 取数失败（%s）：%s——按数据纪律披露缺证，禁止编造" % (code, exc))
     node = (payload.get("data") or {}).get(code) or {}
     bars = node.get("m%d" % freq) or []
     if not bars:
-        raise SystemExit("[错误] 腾讯 mkline 返回空（%s m%d）——核对代码前缀与标的，按 G12 披露缺证"
+        raise SystemExit("[错误] 腾讯 mkline 返回空（%s m%d）——核对代码前缀与标的，按数据纪律披露缺证"
                          % (code, freq))
     if len(bars) > FETCH_COUNT:
         raise SystemExit("[错误] 腾讯 mkline 返回 %d 根超过上限 %d——口径变更，须人工核验后再用"
@@ -321,14 +321,14 @@ def main(argv=None):
               % (csv_path, meta_path, ind_path))
 
         pivots = pivot_facts(sliced, args.k)
-        print("  分形 Pivot 候选（k=%d，共 %d 个；索引=切片 CSV 行号，R20 含影线口径）："
+        print("  分形 Pivot 候选（k=%d，共 %d 个；索引=切片 CSV 行号，EG-05 含影线口径）："
               % (args.k, len(pivots)))
         for idx, ts, price, kind in pivots:
             print("    idx=%-4d %s  %s %s" % (idx, ts, kind, fmt_price(price)))
         if freq == 30:
             pivot_ts_30m = pivots[-1][1] if pivots else None
 
-    print("\n[完成] 切片、元数据与指标 sidecar 已就绪；浪级/形态/完成状态由模型裁决（R22/R24）。")
+    print("\n[完成] 切片、元数据与指标 sidecar 已就绪；浪级/形态/完成状态由模型裁决（EG-01/EG-03）。")
     return 0
 
 

@@ -8,7 +8,7 @@
 分支处理（降级/切换/退回）仍由模型按 05 第 2.3 节判断。
 
 判定口径（D29，与 05 第 2.2 节一致）：
-  - 触及按极端价位（R20）：break-down（跌破支撑/失效位）= low ≤ 价位；
+  - 触及按极端价位（EG-05）：break-down（跌破支撑/失效位）= low ≤ 价位；
     break-up（升破压力/失效位）= high ≥ 价位
   - 确认窗口："触及后连续 N 根收盘未收回"（默认 N=2，--confirm-bars），
     从触及 bar 的下一根起计；收回定义：break-down 后收盘 > 价位，
@@ -20,7 +20,7 @@
         --from-report "分析输出/<文件夹>/分析报告_<标的>_<代码>_<时间>.md" \
         [--include-structural] [--since 2026-08-14] [--confirm-bars 2]
     python invalidation_check.py --csv data.csv \
-        --level "160|break-down|主方案|规则失效|R7" \
+        --level "160|break-down|主方案|规则失效|R-IMP-10" \
         --level "185|break-down|主方案|结构失效|06 6.6注" \
         [--since 2026-08-14] [--confirm-bars 2]
 

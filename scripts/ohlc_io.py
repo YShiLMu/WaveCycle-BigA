@@ -182,8 +182,20 @@ def check_metadata(csv_path, metadata_path=None, source="", fq="", require=False
                 raise ValueError("as_of 早于 CSV 最新 bar")
         except (TypeError, ValueError) as exc:
             raise ValueError("元数据 as_of 日期无效或与 CSV 不一致：%s" % exc) from exc
+    adjust = meta.get("adjust")
+    if adjust is not None:
+        if not isinstance(adjust, dict):
+            raise ValueError("元数据 adjust 须为对象")
+        if adjust.get("kind") != meta.get("fq"):
+            raise ValueError("元数据 adjust.kind 与 fq 不一致")
+        if not isinstance(adjust.get("product_constant"), bool):
+            raise ValueError("元数据 adjust.product_constant 须为布尔值")
+        factor_digest = adjust.get("factor_sha256")
+        if not isinstance(factor_digest, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", factor_digest):
+            raise ValueError("元数据 adjust.factor_sha256 须为 64 位十六进制 SHA-256")
     return {"source": meta.get("source", source), "fq": meta.get("fq", fq),
             "timezone": meta.get("timezone", "未知"), "as_of": as_of,
+            "adjust": adjust,
             "bound": bool(digest),
             "note": ("CSV 哈希绑定通过；来源与复权为元数据声明，未独立验证" if digest
                      else "未绑定元数据（缺 csv_sha256）；数据源与复权仅为声明")}

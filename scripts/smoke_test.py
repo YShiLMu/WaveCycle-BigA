@@ -20,9 +20,9 @@
    OHLC 含 NaN/全 NaN 时极值与收盘不输出 nan 假事实；
 9. invalidation_check.py —— 已触发已确认 / 未触发 / --since 过滤三态判定；
 10. swings.py --dow —— 道氏状态读数（3 点判 2 点定 + DO4 事实 + 无 volume 降级）；
-11. rule_check.py —— R5–R7 通过/违反、下跌镜像、缺浪不适用、非法 --wave 报错；
+11. rule_check.py —— R-IMP-07/09/10 通过/违反、下跌镜像、缺浪不适用、非法 --wave 报错；
 12. preflight.py —— 三段流水线顺序产出 + data_check 不通过即终止（exit 1）；
-13. ew_chart._seg_direction —— R20 极端价位判向口径直测（长上影 close 回落
+13. ew_chart._seg_direction —— EG-05 极端价位判向口径直测（长上影 close 回落
     但 high 新高必须判上行）；
 14. 核心纯函数直测 —— fractal_pivots 交替化、cluster_levels 聚类、
     check_level 最后一根触及边界、gann_auto_scale 分档。
@@ -116,7 +116,7 @@ def gen_md(path, n_img=2):
         f.write("## 5. 失效价位清单\n\n<!-- INVALIDATION-TABLE-BEGIN -->\n\n"
                 "| 方案 | 失效价位 | 方向 | 规则依据 | 触发后果 |\n"
                 "| --- | --- | --- | --- | --- |\n"
-                "| 主方案 | 130 | break-down | R7 | 测试 |\n\n"
+                "| 主方案 | 130 | break-down | R-IMP-10 | 测试 |\n\n"
                 "<!-- INVALIDATION-TABLE-END -->\n")
 
 
@@ -201,7 +201,7 @@ def main(argv=None):
                              "3:110:220:Impulse（延长浪）:up",
                              "4:220:260:Flat（平台形）:down",
                              "5:260:319:Impulse（推动浪）:up",
-                             "--invalid", "130:跌破 130（第 1 浪高点，R7）即失效",
+                             "--invalid", "130:跌破 130（第 1 浪高点，R-IMP-10）即失效",
                              "--current", str(last_close),
                              "--gann", "10:110:up", "--gann-auto-scale",
                              "--path", "1@0,2@60,3@110,4@220,5@260,A@319"],
@@ -210,7 +210,7 @@ def main(argv=None):
                                "A:0:60:Zigzag（锯齿形）:up",
                                "B:60:110:Correction（调整浪）:down",
                                "C:110:319:Impulse（推动浪）:up",
-                               "--invalid", "95:跌破 95（A 浪起点，R5）即失效",
+                               "--invalid", "95:跌破 95（A 浪起点，R-IMP-07）即失效",
                                "--current", str(last_close)],
                               "日线级别 · Intermediate · 替代方案：A-B-C"),
     }
@@ -400,7 +400,7 @@ def main(argv=None):
                        for factor in ("Guideline 得分", "结构完整度", "斐波那契共振", "道氏一致性",
                                       "江恩价格共振", "江恩时间共振", "蜡烛图信号", "失效距离")],
             "失效价位": [{"方案": plan, "类型": "规则失效", "失效价位": "130", "方向": "break-down",
-                          "规则依据": "R7", "触发后果": "测试"} for plan in ("主方案", "替代方案")],
+                          "规则依据": "R-IMP-10", "触发后果": "测试"} for plan in ("主方案", "替代方案")],
             "短期支撑压力": [{"周期": "日线", "方向": "支撑", "浪": "4", "基准": "回撤 3 浪 L3→H3",
                               "比率": "0.382", "价位": "150.00", "级别": "2 级"}],
             "多周期共振": [{"共振带": "148.00–150.00", "方向": "支撑", "浪族": "调整",
@@ -427,12 +427,12 @@ def main(argv=None):
         check("四层报告按MD完整／HTML精简展示：" + script,
               code == 0 and content_ok, err[-200:])
     payload = json.dumps(data, ensure_ascii=False)
-    # 负例：缺"细分深度来源"应被校验拦截（06 R35/D37，未确认深度不得出报告）
+    # 负例：缺"细分深度来源"应被校验拦截（D37，未确认深度不得出报告）
     bad_payload = json.dumps({k: v for k, v in data.items() if k != "细分深度来源"},
                              ensure_ascii=False)
     code, out, err = run([sys.executable, os.path.join(HERE, "gen_report_md.py"),
                           "--data", "-"], stdin_text=bad_payload)
-    check("缺细分深度来源被拦截（R35/D37）", code != 0 and "细分深度来源" in err,
+    check("缺细分深度来源被拦截（D37）", code != 0 and "细分深度来源" in err,
           (out + err).strip()[:150])
     # 负例：缺"分钟分形层"询问记录应被拦截（04 EG-07，未登记答复不得出报告）
     bad_ask = json.loads(payload)
@@ -538,9 +538,9 @@ def main(argv=None):
                   "close": [102.0, 107.0, 105.0, 100.0, 97.0, 98.0]}).to_csv(inv_csv, index=False)
     code, out, err = run([sys.executable, os.path.join(HERE, "invalidation_check.py"),
                           "--csv", inv_csv,
-                          "--level", "99|break-down|主方案|规则失效|R7",
+                          "--level", "99|break-down|主方案|规则失效|R-IMP-10",
                           "--level", "94|break-down|主方案|结构失效|06 6.6注",
-                          "--level", "112|break-up|替代方案|规则失效|R19"])
+                          "--level", "112|break-up|替代方案|规则失效|R-IMP-10"])
     check("判定正常退出", code == 0, (out + err).strip()[:200])
     check("规则失效首根立即生效（99，2024-01-01）",
           "已触发规则失效（立即生效" in out and "2024-01-01 | 2024-01-01" in out)
@@ -550,11 +550,11 @@ def main(argv=None):
           "价位数 3；判定分支 3，其中 1 个已触发，0 个已确认；方向待确认 0" in out)
     code, out, err = run([sys.executable, os.path.join(HERE, "invalidation_check.py"),
                           "--csv", inv_csv, "--since", "2024-01-05",
-                          "--level", "99|break-down|主方案|规则失效|R7"])
+                          "--level", "99|break-down|主方案|规则失效|R-IMP-10"])
     check("--since 过滤生效", code == 0 and "2024-01-05" in out and "2024-01-04" not in out,
           out.strip()[:150])
     code, out, err = run([sys.executable, os.path.join(HERE, "invalidation_check.py"),
-                          "--csv", inv_csv, "--level", "99|向下|主方案|R7"])
+                          "--csv", inv_csv, "--level", "99|向下|主方案|R-IMP-10"])
     check("非法 --level 报错退出", code != 0 and "5 段" in (out + err), (out + err).strip()[:150])
 
     # ---- 9b. invalidation_check.py --from-report（锚点/降级/方向三层降级/观察位分离）----
@@ -564,7 +564,7 @@ def main(argv=None):
         f.write("# 报告\n\n## 5. 失效价位清单\n\n<!-- INVALIDATION-TABLE-BEGIN -->\n\n"
                 "| 方案 | 失效价位 | 方向 | 规则依据 | 触发后果 |\n"
                 "| --- | --- | --- | --- | --- |\n"
-                "| 主方案 | 99 | break-down | R7 | 测试 |\n"
+                "| 主方案 | 99 | break-down | R-IMP-10 | 测试 |\n"
                 "| 替代方案（观察位） | 108 | break-up | 非规则失效价位，实务观察 | 测试 |\n\n"
                 "<!-- INVALIDATION-TABLE-END -->\n")
     code, out, err = run([sys.executable, os.path.join(HERE, "invalidation_check.py"),
@@ -576,12 +576,13 @@ def main(argv=None):
     check("观察位单列且不参与判定", "观察位" in out and "不参与触发判定" in out
           and "| 升破 |" not in out, out.strip()[-300:])
 
+    # 旧格式样本保留历史编号，仅用于验证归档兼容解析；新输出禁止使用旧编号
     rep_old = os.path.join(tmp, "报告_旧格式.md")
     with open(rep_old, "w", encoding="utf-8", newline="\n") as f:
         f.write("# 报告\n\n## 【5. 失效价位清单】\n\n"
                 "| 方案 | 类型 | 失效价位 | 判定标准 | 触发后动作 |\n"
                 "| --- | --- | --- | --- | --- |\n"
-                "| 主方案 | 规则失效（下） | 99 | 跌破第 [1] 浪顶，违反 R7 | 失效 |\n"
+                "| 主方案 | 规则失效（下） | 99 | 跌破第 [1] 浪顶，违反 R7 | 失效 |\n"  # legacy-ok 历史归档兼容样本
                 "| 主方案 | 结构预警 | 96 | 跌破后连续 2 根收盘未收回 | 阶段切换 |\n"
                 "| 替代方案 | 规则失效 | 105 | 价格触及该位后结构重估 | 重估 |\n\n"
                 "## 【6. 交易计划建议】\n")
@@ -618,7 +619,7 @@ def main(argv=None):
                           "--wave", "1:100:160", "--wave", "2:160:130",
                           "--wave", "3:130:220", "--wave", "4:220:185", "--wave", "5:185:190"])
     check("上升推动全通过（exit 0）",
-          code == 0 and out.count("通过") >= 3 and "R17/R29" in out, (out + err).strip()[:200])
+          code == 0 and out.count("通过") >= 3 and "失败浪（结构判断）" in out, (out + err).strip()[:200])
     code, out, err = run([sys.executable, os.path.join(HERE, "rule_check.py"),
                           "--wave", "1:100:160", "--wave", "2:160:130",
                           "--wave", "3:130:220", "--wave", "4:220:155"])
@@ -663,7 +664,7 @@ def main(argv=None):
           code == 0 and "compact 默认口径" not in out, (out + err).strip()[-200:])
 
     # ---- 13. ew_chart._seg_direction 判向口径直测 ----
-    print("== 13. ew_chart._seg_direction（R20 极端价位判向口径）==")
+    print("== 13. ew_chart._seg_direction（EG-05 极端价位判向口径）==")
     sys.path.insert(0, HERE)
     import ew_chart as _ew
     mini = pd.DataFrame({
@@ -716,7 +717,7 @@ def main(argv=None):
         "open": [100.0, 101.0, 102.0], "high": [101.0, 102.0, 103.0],
         "low": [99.0, 100.0, 90.0], "close": [100.5, 101.5, 102.0]})
     r_last = _iv.check_level(df_last, {"price": 90.0, "direction": "break-down",
-                                       "plan": "主", "kind": "规则失效", "rule": "R7"})
+                                       "plan": "主", "kind": "规则失效", "rule": "R-IMP-10"})
     check("check_level 规则触及在最后一根仍立即失效",
           "立即生效" in r_last["status"]
           and r_last["confirmed"] is not None and r_last["first_touch"] is not None,

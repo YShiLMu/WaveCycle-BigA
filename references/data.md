@@ -182,7 +182,19 @@ def apply_adjust(df, factors, kind):
     return pd.DataFrame(out)
 
 
-def write_csv(df, symbol, freq, fq, source):
+def factor_evidence(hfq, qfq, kind):
+    """把因子链结论固化为 metadata 证据块，供 data_check 复验（不落因子全量）。"""
+    qfq_map = {x["date"]: x["factor"] for x in qfq}
+    products = {round(x["factor"] * qfq_map[x["date"]], 9)
+                for x in hfq if x["date"] in qfq_map}
+    payload = json.dumps({"hfq": hfq, "qfq": qfq}, ensure_ascii=False, sort_keys=True)
+    return {"kind": kind, "factor_source": "sina",
+            "hfq_first": hfq[0]["factor"], "qfq_last": qfq[-1]["factor"],
+            "product_constant": len(products) == 1,
+            "factor_sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest()}
+
+
+def write_csv(df, symbol, freq, fq, source, adjust=None):
     """落盘 %TEMP% + 同名 metadata；csv_sha256 缺失时 data_check 拒绝作为正式数据链。"""
     assert (df["high"] >= df[["open", "close", "low"]].max(axis=1)).all(), "high 非最高"
     assert (df["low"] <= df[["open", "close", "high"]].min(axis=1)).all(), "low 非最低"
@@ -194,6 +206,8 @@ def write_csv(df, symbol, freq, fq, source):
         digest = hashlib.sha256(fh.read()).hexdigest()
     meta = {"source": source, "fq": fq, "as_of": f"{df['date'].iloc[-1]} 15:00",
             "timezone": "Asia/Shanghai", "csv_sha256": digest}
+    if adjust is not None:
+        meta["adjust"] = adjust
     with open(os.path.splitext(csv_path)[0] + ".metadata.json", "w", encoding="utf-8") as fh:
         json.dump(meta, fh, ensure_ascii=False, indent=2)
     return csv_path
@@ -202,14 +216,17 @@ def write_csv(df, symbol, freq, fq, source):
 def main(symbol="sh603259", freq="day", fq="qfq"):
     raw = fetch_raw(symbol, freq)
     if fq == "none":
-        return write_csv(raw, symbol, freq, fq, "腾讯 fqkline")
+        return write_csv(raw, symbol, freq, fq, "腾讯 fqkline", {"kind": "none"})
     hfq, qfq = sina_factor(symbol, "hfq"), sina_factor(symbol, "qfq")
     check_factors(hfq, qfq)
+    evidence = factor_evidence(hfq, qfq, fq)
     adjusted = apply_adjust(raw, hfq if fq == "hfq" else qfq, fq)
-    return write_csv(adjusted, symbol, freq, fq, "腾讯 fqkline + 新浪因子")
+    return write_csv(adjusted, symbol, freq, fq, "腾讯 fqkline + 新浪因子", evidence)
 ```
 
 拿到返回的 CSV 路径后，依次跑 「data_check」（源文件）（带 `--fq` 与 `--require-metadata`）和 「preflight」（源文件）。复权口径只能取 `hfq`／`qfq`／`none` 三者之一，并在报告【1 分析前提】如实披露。
+
+metadata 的 `adjust` 块是复权证据（kind、因子边界、hfq×qfq 乘积恒定、因子 SHA-256）。「data_check」（源文件） 对 `qfq` 允许"声明未验证"并披露；对 `hfq` 无 `adjust` 块或校验失败直接判不通过，禁止以声明代替验证。
 
 ### 2.2 运行 「data_check」（源文件） 质量守门
 执行质检脚本，验证 CSV 列序契约与元信息完整性：

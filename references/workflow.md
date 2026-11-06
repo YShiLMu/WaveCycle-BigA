@@ -266,9 +266,8 @@ python 06_技能_skill/scripts/rule_check.py --wave "[1]:2635.09:3174.27" --wave
 
 WaveCycle 体系将核心工程参数、容差阈值与判定契约集中编码为默认口径体系。
 
-- **D1–D42 的唯一真源是 「06_技能_skill/references/defaults」（源文件）**（由 「01_知识库_knowledge/09_默认口径_defaults」（源文件） 转换生成）。下表与之一一对应，仅为本重构版的速查副本；**若与 defaults.md 冲突，一律以 defaults.md 为准**。
-- **D43–D59 为本重构版新增参数，尚未登记回 defaults.md**。切源（把 「构建脚本」 的源指向本目录）时，必须先把 D43–D59 回写 09 号源文件并重建打包版，否则线上不认这些编号。
-- **D60–D65 为短期支撑压力、多周期共振与复权口径新增参数**，D60–D64 理论真源为 「01_知识库_knowledge/11_短期支撑压力测算_shortterm_sr」（源文件） 与 「12_多周期共振_multiframe_resonance」（源文件）（打包后为 `references/short_term_sr.md`、`references/multiframe_resonance.md`），D65 真源为本文 §1.2 与 「01_数据获取与市场分析准备」（源文件） §1.3，同样尚未回写 09 号源文件。
+- **本附录是 D1–D65 的唯一真源**；打包版 「06_技能_skill/references/defaults」（源文件） 由 「构建脚本」 从本节转换生成，禁止直接修改产物。
+- D60–D64 的理论真源为 「01_知识库_knowledge/11_短期支撑压力测算_shortterm_sr」（源文件） 与 「12_多周期共振_multiframe_resonance」（源文件）；D65 真源为本文 §1.2 与 「01_数据获取与市场分析准备」（源文件） §1.3。理论表述以对应真源文件为准，编号定义以本表为准。
 - 任何编号调整必须遵行「改本表 + 改权威定义处 + 全仓库引用一致 + 报告披露」四步。
 
 | 口径编号 | 名称与功能定位 | 标准取值 / 工程契约规则 | 关联核心模块 |
@@ -533,7 +532,19 @@ def apply_adjust(df, factors, kind):
     return pd.DataFrame(out)
 
 
-def write_csv(df, symbol, freq, fq, source):
+def factor_evidence(hfq, qfq, kind):
+    """把因子链结论固化为 metadata 证据块，供 data_check 复验（不落因子全量）。"""
+    qfq_map = {x["date"]: x["factor"] for x in qfq}
+    products = {round(x["factor"] * qfq_map[x["date"]], 9)
+                for x in hfq if x["date"] in qfq_map}
+    payload = json.dumps({"hfq": hfq, "qfq": qfq}, ensure_ascii=False, sort_keys=True)
+    return {"kind": kind, "factor_source": "sina",
+            "hfq_first": hfq[0]["factor"], "qfq_last": qfq[-1]["factor"],
+            "product_constant": len(products) == 1,
+            "factor_sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest()}
+
+
+def write_csv(df, symbol, freq, fq, source, adjust=None):
     """落盘 %TEMP% + 同名 metadata；csv_sha256 缺失时 data_check 拒绝作为正式数据链。"""
     assert (df["high"] >= df[["open", "close", "low"]].max(axis=1)).all(), "high 非最高"
     assert (df["low"] <= df[["open", "close", "high"]].min(axis=1)).all(), "low 非最低"
@@ -545,6 +556,8 @@ def write_csv(df, symbol, freq, fq, source):
         digest = hashlib.sha256(fh.read()).hexdigest()
     meta = {"source": source, "fq": fq, "as_of": f"{df['date'].iloc[-1]} 15:00",
             "timezone": "Asia/Shanghai", "csv_sha256": digest}
+    if adjust is not None:
+        meta["adjust"] = adjust
     with open(os.path.splitext(csv_path)[0] + ".metadata.json", "w", encoding="utf-8") as fh:
         json.dump(meta, fh, ensure_ascii=False, indent=2)
     return csv_path
@@ -553,14 +566,17 @@ def write_csv(df, symbol, freq, fq, source):
 def main(symbol="sh603259", freq="day", fq="qfq"):
     raw = fetch_raw(symbol, freq)
     if fq == "none":
-        return write_csv(raw, symbol, freq, fq, "腾讯 fqkline")
+        return write_csv(raw, symbol, freq, fq, "腾讯 fqkline", {"kind": "none"})
     hfq, qfq = sina_factor(symbol, "hfq"), sina_factor(symbol, "qfq")
     check_factors(hfq, qfq)
+    evidence = factor_evidence(hfq, qfq, fq)
     adjusted = apply_adjust(raw, hfq if fq == "hfq" else qfq, fq)
-    return write_csv(adjusted, symbol, freq, fq, "腾讯 fqkline + 新浪因子")
+    return write_csv(adjusted, symbol, freq, fq, "腾讯 fqkline + 新浪因子", evidence)
 ```
 
 拿到返回的 CSV 路径后，依次跑 「data_check」（源文件）（带 `--fq` 与 `--require-metadata`）和 「preflight」（源文件）。复权口径只能取 `hfq`／`qfq`／`none` 三者之一，并在报告【1 分析前提】如实披露。
+
+metadata 的 `adjust` 块是复权证据（kind、因子边界、hfq×qfq 乘积恒定、因子 SHA-256）。「data_check」（源文件） 对 `qfq` 允许"声明未验证"并披露；对 `hfq` 无 `adjust` 块或校验失败直接判不通过，禁止以声明代替验证。
 
 ### 2.2 运行 「data_check」（源文件） 质量守门
 执行质检脚本，验证 CSV 列序契约与元信息完整性：
@@ -1127,6 +1143,8 @@ python 06_技能_skill/scripts/swings.py --csv "<标准化CSV绝对路径>" --k 
   - 若浪 3 延长：后续调整通常回撤至浪 4 价格区域；
   - 若浪 5 延长：后续调整通常至少快速回撤浪 5 全幅度的 61.8% 以上。
 
+> **执行入口**：Stage 1/2 的数值判定统一调用 `scripts/post_constructive_check.py`；单浪归口（Neely Pre-Constructive）调用 `scripts/monowave_judge.py`。两者只给数值事实，形态、级别与完成状态仍由模型裁决。
+
 ---
 
 ## 三、跨流派冲突裁决引擎（Conflict Adjudication Engine）
@@ -1246,6 +1264,8 @@ $$\text{Total Score} = 2 \times S_{\text{Guideline}} + \sum_{k=2}^{8} S_k \quad 
    - 评级为 0 并不规定必须 100% 完全回撤，严禁将 0 误写为固定 100% 回撤目标；
    - 评级为 $\pm 1$ 通常回撤不超过 90%，$\pm 2$ 通常不超过 80%，$\pm 3$ 通常不超过 60%～70%；
    - 评级对象必须采用当前**最大已完成形态（Compaction）**，不得将局部末端子浪的评级错层套用于更大宏观级别。
+
+> **执行入口**：`scripts/power_rating.py --type "<形态名>"` 查表输出评级与后势参考；脚本不识别形态，类型由模型数浪确定。
 
 ### 4.3 综合得分与主备排序（无绝对门槛，只有相对序位）
 
