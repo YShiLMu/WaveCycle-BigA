@@ -21,11 +21,23 @@ NEXT_ACTIONS = {"recount", "finer_data", "wait"}
 
 
 def applicable_depth(path, depth, roots=()):
-    """指定四层分支以外仍检查三层；祖先承担通向分支的覆盖。"""
-    if depth != 4 or not roots:
+    """指定四层分支以外仍检查三层；祖先承担通向分支的覆盖。未登记分支时一律停在第三层。"""
+    if depth != 4:
         return depth
     return 4 if any(path == r or path.startswith(r + "-") or r.startswith(path + "-")
                     for r in roots) else 3
+
+
+def default_fourth_layer_root(scheme, waves):
+    """四层默认只展开当前活跃浪所在的第三层父浪；无活跃标记时取最近一个第三层浪。"""
+    third_layer = [w["path"] for w in waves if w["path"].count("-") == 2]
+    if not third_layer:
+        return None
+    current = str(scheme.get("current_path", "")).split("-")
+    if len(current) >= 3 and "-".join(current[:3]) in third_layer:
+        return "-".join(current[:3])
+    starts = {w["path"]: w["start"]["date"] for w in waves}
+    return max(third_layer, key=lambda path: starts[path])
 
 
 def is_confirmed_complete(wave):
@@ -201,6 +213,8 @@ def validate_scope(scope, depth, names):
         if (not isinstance(roots_for_four, list) or any(not isinstance(r, str) for r in roots_for_four)
                 or len(set(roots_for_four)) != len(roots_for_four) or (roots_for_four and depth != 4)):
             raise ValueError("fourth_layer_roots须为四层分析的唯一分支路径数组")
+        if depth == 4 and not roots_for_four:
+            raise ValueError("交付4层须登记fourth_layer_roots：默认当前活跃第三层父浪，全树须列全部第三层父浪")
         extras = scheme.get("extra_checks", [])
         if not isinstance(extras, list) or not all(isinstance(w, dict) for w in extras):
             raise ValueError("extra_checks须保留额外内部检查对象")
@@ -307,12 +321,19 @@ def from_facts(metadata, result, data_start):
         gaps_by_path = {g.get("path"): g for g in gaps}
         if len(gaps_by_path) != len(gaps):
             raise ValueError("缺证父浪路径重复")
+        roots_four = scheme.get("fourth_layer_roots") or []
+        if result["depth"] == 4 and not roots_four:
+            root = default_fourth_layer_root(scheme, facts["waves"])
+            if root is None:
+                raise ValueError("交付4层须先登记至少一个第三层父浪")
+            roots_four = [root]
+            scheme["fourth_layer_roots"] = roots_four
         records, extra_checks = [], []
         used_gaps = set()
         for fact in facts["waves"]:
             path = fact["path"]
             level = path.count("-") + 1
-            target = applicable_depth(path, result["depth"], scheme.get("fourth_layer_roots", []))
+            target = applicable_depth(path, result["depth"], roots_four)
             children = [w for w in facts["waves"] if w["parent"] == path]
             expanded = (fact["completed"] and children and all(w["completed"] for w in children)
                         and children[-1]["end"]["date"] == fact["end"]["date"])
@@ -438,8 +459,9 @@ def scope_tables(scope):
         if scheme.get("short_scope_reason"):
             text += "；短框架限制：" + scheme["short_scope_reason"] + "；补证：" + scheme["supplement"]
         premise.append({"项": scheme["name"] + "第一层框架", "内容": text})
-        premise.append({"项": scheme["name"] + "四层范围", "内容": "、".join(scheme.get("fourth_layer_roots", [])) or
-                        ("全分析范围" if scope["delivery_depth"] == 4 else "三层交付；必要第四层另留证")})
+        four_roots = scheme.get("fourth_layer_roots", [])
+        premise.append({"项": scheme["name"] + "四层范围", "内容": "、".join(four_roots) if four_roots else
+                        ("未登记四层分支" if scope["delivery_depth"] == 4 else "三层交付；必要第四层另留证")})
         for wave in scheme["waves"] + scheme.get("extra_checks", []):
             level = wave["path"].count("-")
             indent = ("　" * level + "└─ ") if level > 0 else ""

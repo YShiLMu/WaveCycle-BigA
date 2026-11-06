@@ -19,10 +19,10 @@
   - 固定按上限 800 根请求（>800 会静默回退 320，本脚本绝不请求超过 800 并校验
     返回根数）；无翻页能力，只能拿最近 N 根；
   - 腾讯分钟线字段序为 时间,开,收,高,低,量(手)——close 在 high 前，落盘前强制
-    重排为契约列序 date,open,high,low,close,volume（tool_discipline 第 1 节）；
+    重排为契约列序 date,open,high,low,close,volume（references/workflow.md 第 1 步第 1 节）；
   - 时间戳标 bar 结束时刻（60m 单日 4 根 = 10:30/11:30/14:00/15:00）；
   - 分钟线全源不复权（none），与日线 qfq/hfq 只做时间戳锚定与结构映射，
-    禁止跨周期混算价格（10 数据获取协议）。
+    禁止跨周期混算价格（references/data.md）。
 
 切片规则（09 默认口径 D42）：
   - 60m：锚点 bar（日级锚点用当日 argmin(low)/argmax(high) 定位，并列取最早）

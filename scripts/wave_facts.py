@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """候选浪统一事实入口：索引取价、层级契约、批量数值规则及双向目标。
 
-输入格式与示例见references/tool_discipline.md第7节。
+输入格式与示例见references/tool_discipline.md第6节；分析尺度契约见同文件第7节。
 用法：wave_facts.py --csv <行情> --data <候选JSON> --out <系统临时目录/facts.json>
 默认只打印异常摘要；--format json取完整结果，--scheme/--path只展开指定部分。
 退出码：0=机械检查未发现违反（仍可能缺证），1=有违反，2=输入/调用错误。
@@ -424,7 +424,7 @@ def print_summary(result, scheme=None, path=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--csv", required=True)
-    parser.add_argument("--data", required=True, help="候选树JSON，格式见tool_discipline第7节")
+    parser.add_argument("--data", required=True, help="候选树JSON，格式见references/tool_discipline.md第6节")
     parser.add_argument("--out", help="完整结果JSON的绝对路径，仅允许系统临时目录")
     parser.add_argument("--format", choices=["summary", "json"], default="summary")
     parser.add_argument("--scheme", help="摘要只展开指定方案；退出码仍覆盖所有方案")

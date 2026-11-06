@@ -12,7 +12,7 @@ references/defaults.md（D12/D25）、03_工作流_workflow/03_多流派综合�
     名称 : Guideline 得分 : 结构完整度 : 斐波那契共振 : 道氏一致性 :
     江恩价格共振 : 江恩时间共振 : 蜡烛图信号 : 失效距离
 
-口径（references/workflow.md 第 5 步第 7 节 7.2）：
+口径（references/defaults.md D12/D25；references/workflow.md 第 3 步第 4 节）：
 - Guideline 得分 = 原始累计分（命中 +1 / 不适用 0 / 违反 −1），任意整数，加权 ×2；
 - 其余七因子各取 0–2 分（禁止 10 分制、5 分制等其他分制，脚本直接报错）：
   结构完整度 2=细分清晰且级别嵌套自洽、1=基本清晰、0=部分待确认；
@@ -32,7 +32,7 @@ references/defaults.md（D12/D25）、03_工作流_workflow/03_多流派综合�
 import argparse
 import sys
 
-# 因子名（按 workflow 第 5 步第 7 节 7.2 顺序）
+# 因子名（按 references/workflow.md 第 3 步第 4 节顺序）
 FACTORS = ["结构完整度", "斐波那契共振", "道氏一致性", "江恩价格共振",
            "江恩时间共振", "蜡烛图信号", "失效距离"]
 

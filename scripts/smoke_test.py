@@ -432,6 +432,8 @@ def main(argv=None):
     four_data["细分深度"] = 4
     four_data["细分深度来源"] = "用户确认-4层"
     four_data["analysis_scope"]["delivery_depth"] = 4
+    for scheme in four_data["analysis_scope"]["schemes"]:
+        scheme["fourth_layer_roots"] = ["1"]
     four_data["tables"]["分析前提"][0]["内容"] = "用户确认-4层"
     for script in ("gen_report_md.py", "gen_report_web.py"):
         code, out, err = run([sys.executable, os.path.join(HERE, script), "--data", "-"],

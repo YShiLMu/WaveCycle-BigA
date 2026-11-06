@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""数据自检与数据基准输出脚本（workflow 第 1 步 1.4/1.5 节，D28 口径）。
+"""数据自检与数据基准输出脚本（references/workflow.md 第 1 步第 2 节，D28 口径）。
 
 用途：进入数浪前对行情 CSV 执行数据自检，输出《数据自检表》（markdown，
 与 05_模板_templates/01_分析报告_report.md 第 1 章格式同构）与数据基准
@@ -41,7 +41,7 @@ import sys
 import pandas as pd
 
 
-CONTRACT_COLS = ["date", "open", "high", "low", "close"]  # 数据契约列序（10 数据获取协议第 3 节）
+CONTRACT_COLS = ["date", "open", "high", "low", "close"]  # 数据契约列序（references/workflow.md 第 1 步第 1 节）
 
 
 def load_csv(csv_path):
@@ -314,7 +314,7 @@ def main(argv=None):
         print("（数据读取失败或日期不可解析，无基准可输出）")
 
     if failed:
-        print("\n存在 %d 项不通过：退回重新取数或按数据获取协议第 4 节降级标注，禁止带病数据进入数浪。"
+        print("\n存在 %d 项不通过：退回重新取数或按 references/workflow.md 第 1 步第 2 节降级标注，禁止带病数据进入数浪。"
               % len(failed))
         return 1
     print("\n自检全部通过，可进入数浪。")
