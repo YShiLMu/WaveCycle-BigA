@@ -40,10 +40,9 @@ def main():
     jm = data["简明分析说明"]
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    tpl_path = os.path.normpath(os.path.join(os.path.dirname(script_dir),
-                                             "assets", "分析报告_report.md"))
+    tpl_path = rc.template_path(script_dir, "分析报告_report.md")
     if not os.path.isfile(tpl_path):
-        fail("分析报告模板不存在: %s" % tpl_path)
+        fail(rc.missing_asset_message(tpl_path, script_dir))
     with open(tpl_path, encoding="utf-8") as f:
         md = f.read()
     rc.check_invalidation_anchor(md, "分析报告模板 %s" % tpl_path)

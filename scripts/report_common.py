@@ -50,11 +50,20 @@ TABLE_FIELDS = {
     "neely参考": ["脚本", "输出", "意义"],
     "八因子": ["因子", "主方案", "替代方案"],
     "失效价位": ["方案", "类型", "失效价位", "方向", "规则依据", "触发后果"],
+    "短期支撑压力": ["周期", "方向", "浪", "基准", "比率", "价位", "级别"],
+    "多周期共振": ["共振带", "方向", "浪族", "参与周期", "各轴原级", "星数", "级别", "结论"],
 }
 
 # 分钟分形层询问记录（04 EG-07）：跳过询问或记错答复的报告一律不得交付。
 MINUTE_ASK_ROW = "分钟分形层"
 MINUTE_ASK_VALUES = ("已询问-启用", "已询问-不启用", "未询问-环境无交互")
+
+# 短期支撑压力与多周期共振（11/12 号文件）：波位用"N 级"，共振用"N 星"，两者不得混用。
+SR_TABLES = ("短期支撑压力", "多周期共振")
+SR_GRADES = ("1 级", "2 级", "3 级")
+SR_SIDES = ("支撑", "压力")
+SR_STAR_PATTERN = r"(?:0\.5|1|1\.5|2|2\.5|3) 星|≥3 星"
+SR_SKIP_MARKS = ("不适用", "未数出浪型")
 
 FACTOR_NAMES = ["Guideline 得分", "结构完整度", "斐波那契共振", "道氏一致性",
                 "江恩价格共振", "江恩时间共振", "蜡烛图信号", "失效距离"]
@@ -134,6 +143,24 @@ SUBDIVISION_DEPTHS = (3, 4)
 DEPTH_SOURCES = ("默认-3层", "用户确认-3层", "用户确认-4层")
 
 
+ASSET_DIRNAME = "assets"
+INSTALLED_SCRIPTS = os.path.join(os.path.expanduser("~"), ".agents", "skills", "wavecycle", "scripts")
+
+
+def template_path(script_dir, filename):
+    """技能模板路径 = <技能根>/assets/<filename>；技能根即脚本所在目录的上一级。"""
+    return os.path.normpath(os.path.join(os.path.dirname(script_dir), ASSET_DIRNAME, filename))
+
+
+def missing_asset_message(path, script_dir):
+    """技能资源缺失的指路提示：执行根不对，不是依赖问题（见 SKILL.md「执行根」）。"""
+    return ("缺少技能资源: %s\n"
+            "  当前脚本所在目录: %s（同级没有 %s/）\n"
+            "  技能脚本须从安装版执行: %s\n"
+            "  安装或更新: 在项目根运行 python install_skill.py --install"
+            % (path, script_dir, ASSET_DIRNAME, INSTALLED_SCRIPTS))
+
+
 def fail(msg):
     print("[错误] %s" % msg, file=sys.stderr)
     sys.exit(1)
@@ -178,6 +205,30 @@ def validate_minute_ask(tables, legacy_ok=False):
         fail("%s 记录须为 %s 之一，收到: %r"
              % (MINUTE_ASK_ROW, "、".join(MINUTE_ASK_VALUES), value))
     return value
+
+
+def validate_sr_rows(tname, rows):
+    """短期支撑压力／多周期共振表的取值契约：方向、级别、星数。
+
+    降级行（首列写"不适用"或"未数出浪型"）不参与取值校验，但必须真实存在：
+    空表由 validate 的 empty_tables 直接拒绝，禁止用空表冒充"无共振"。
+    """
+    head = "周期" if tname == "短期支撑压力" else "共振带"
+    for index, row in enumerate(rows):
+        if str(row.get(head, "")).strip() in SR_SKIP_MARKS:
+            continue
+        if str(row.get("方向", "")).strip() not in SR_SIDES:
+            fail("%s表第 %d 行'方向'列须为 %s 之一，收到：%r"
+                 % (tname, index + 1, "、".join(SR_SIDES), row.get("方向")))
+        grade = str(row.get("级别", "")).strip()
+        if grade not in SR_GRADES:
+            fail("%s表第 %d 行'级别'列须为 %s 之一，收到：%r"
+                 % (tname, index + 1, "、".join(SR_GRADES), grade))
+        if tname == "多周期共振":
+            stars = str(row.get("星数", "")).strip()
+            if not re.fullmatch(SR_STAR_PATTERN, stars):
+                fail("多周期共振表第 %d 行'星数'列须形如「1 星」「0.5 星」「≥3 星」，收到：%r"
+                     % (index + 1, stars))
 
 
 def validate(data, legacy_ok=False):
@@ -233,6 +284,8 @@ def validate(data, legacy_ok=False):
                 if str(r.get("方向", "")).strip() not in INVALIDATION_DIRECTIONS:
                     fail("失效价位表第 %d 行'方向'列须为 break-down/break-up"
                          "（--from-report 零推断依赖），收到: %r" % (i + 1, r.get("方向")))
+        if tname in SR_TABLES:
+            validate_sr_rows(tname, rows)
     if empty_tables:
         fail("data.json 表格为空或缺失: %s" % "、".join(empty_tables))
     if not any(str(r.get("项", "")).strip() == "细分深度来源"

@@ -46,9 +46,10 @@ import pandas as pd
 
 from naming import HTML_TOKENS, IMAGE_KEYS, IMAGE_PLACEHOLDERS
 
+import report_common as rc
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-SKILL = os.path.dirname(HERE)
-HTML_TEMPLATE = os.path.join(SKILL, "assets", "网页报告_web_report.html")
+HTML_TEMPLATE = rc.template_path(HERE, "网页报告_web_report.html")
 FAILED = []
 
 
@@ -133,6 +134,18 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="wavecycle 三脚本冒烟测试")
     parser.add_argument("--keep", action="store_true", help="保留临时产物目录")
     args = parser.parse_args(argv)
+
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except AttributeError:
+            pass
+
+    # 执行根不对时先停：缺 assets/ 是安装位置问题，不是依赖问题，避免被当成缺包深挖脚本
+    if not os.path.isfile(HTML_TEMPLATE):
+        print(rc.missing_asset_message(HTML_TEMPLATE, HERE), file=sys.stderr)
+        print("\nSMOKE FAILED：技能资源缺失（执行根不对，不是依赖或环境问题）")
+        return 1
 
     tmp = tempfile.mkdtemp(prefix="wavecycle_smoke_")
     print("临时目录：%s" % tmp)
@@ -388,6 +401,12 @@ def main(argv=None):
                                       "江恩价格共振", "江恩时间共振", "蜡烛图信号", "失效距离")],
             "失效价位": [{"方案": plan, "类型": "规则失效", "失效价位": "130", "方向": "break-down",
                           "规则依据": "R7", "触发后果": "测试"} for plan in ("主方案", "替代方案")],
+            "短期支撑压力": [{"周期": "日线", "方向": "支撑", "浪": "4", "基准": "回撤 3 浪 L3→H3",
+                              "比率": "0.382", "价位": "150.00", "级别": "2 级"}],
+            "多周期共振": [{"共振带": "148.00–150.00", "方向": "支撑", "浪族": "调整",
+                            "参与周期": "日线／60m", "各轴原级": "日线 2 级／60m 3 级",
+                            "星数": "1 星", "级别": "3 级",
+                            "结论": "1 星支撑（日线／60m），取 3 级"}],
         },
         "简明分析说明": {
             "大级别浪": "第4浪", "小级别浪": "第4浪的b浪",

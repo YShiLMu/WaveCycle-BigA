@@ -49,11 +49,11 @@ $$\text{Columns} = [\texttt{date}, \texttt{open}, \texttt{high}, \texttt{low}, \
 ### 1.2 「data_check」（源文件） 严格校验与退出码 1 熔断机制
 在任何数据文件提供给后续分析模块前，必须无条件执行数据自检工具：
 ```bash
-python 06_技能_skill/scripts/data_check.py --csv "<CSV绝对路径>" --source "<数据源>" --fq hfq --require-metadata
+python 06_技能_skill/scripts/data_check.py --csv "<CSV绝对路径>" --source "<数据源>" --fq qfq --require-metadata
 ```
 - **注意**：`--csv` 为**具名必填参数**，四个数据脚本（「data_check」（源文件） / 「preflight」（源文件） / 「swings」（源文件） / 「key_levels」（源文件））都不接受位置参数；照抄漏写 `--csv` 会直接 argparse 报错。
 - **表头精准匹配**：「data_check」（源文件） 会逐字比对首行表头。凡存在字段缺少、名称大小写不符、多余空格或列序错位者，脚本**立即抛出致命异常并以退出码 1 熔断退出**。
-- **元数据绑定（Metadata）**：生产级分析必须配套 `<CSV路径>.metadata.json`，声明数据源（`source`）、复权类型（`fq`）、截止时间戳（`as_of`）、时区（`timezone`）以及对应 CSV 的 SHA-256 哈希值。**复权口径**：长周期/大级别默认目标后复权（`hfq`）；当 a-stock-data 的复权因子完整、匹配且应用结果通过自检时使用 hfq，否则自动降级为腾讯 fqkline 前复权（`qfq`）并披露，禁止自行推算因子或谎称 hfq；分钟分形层独立不复权（`none`，见 D42）。哈希校验不一致时同样触发熔断。
+- **元数据绑定（Metadata）**：生产级分析必须配套 `<CSV路径>.metadata.json`，声明数据源（`source`）、复权类型（`fq`）、截止时间戳（`as_of`）、时区（`timezone`）以及对应 CSV 的 SHA-256 哈希值。**复权口径**：日线默认前复权（`qfq`），与同花顺/东财前复权可见价位一致，也是 `02_案例库` 的既有口径；仅当用户显式要求后复权时才使用 hfq（此时须确保 a-stock-data 复权因子完整、匹配且应用结果通过自检），禁止自行推算因子或谎称 hfq；分钟分形层独立不复权（`none`，见 D42）。除权后 qfq 历史价格整体漂移，更新报告时必须全量重算失效价位并在第 8 章登记。哈希校验不一致时同样触发熔断。
 
 ### 1.3 中间数据落盘口径与环境隔离
 为保持代码库与生产工作区的纯净，杜绝并发分析时的脏文件冲突：
@@ -262,12 +262,13 @@ python 06_技能_skill/scripts/rule_check.py --wave "[1]:2635.09:3174.27" --wave
 
 ---
 
-## 附录：系统默认口径（D1–D59）注册与速查表
+## 附录：系统默认口径（D1–D65）注册与速查表
 
 WaveCycle 体系将核心工程参数、容差阈值与判定契约集中编码为默认口径体系。
 
 - **D1–D42 的唯一真源是 「06_技能_skill/references/defaults」（源文件）**（由 「01_知识库_knowledge/09_默认口径_defaults」（源文件） 转换生成）。下表与之一一对应，仅为本重构版的速查副本；**若与 defaults.md 冲突，一律以 defaults.md 为准**。
 - **D43–D59 为本重构版新增参数，尚未登记回 defaults.md**。切源（把 「构建脚本」 的源指向本目录）时，必须先把 D43–D59 回写 09 号源文件并重建打包版，否则线上不认这些编号。
+- **D60–D65 为短期支撑压力、多周期共振与复权口径新增参数**，D60–D64 理论真源为 「01_知识库_knowledge/11_短期支撑压力测算_shortterm_sr」（源文件） 与 「12_多周期共振_multiframe_resonance」（源文件）（打包后为 `references/short_term_sr.md`、`references/multiframe_resonance.md`），D65 真源为本文 §1.2 与 「01_数据获取与市场分析准备」（源文件） §1.3，同样尚未回写 09 号源文件。
 - 任何编号调整必须遵行「改本表 + 改权威定义处 + 全仓库引用一致 + 报告披露」四步。
 
 | 口径编号 | 名称与功能定位 | 标准取值 / 工程契约规则 | 关联核心模块 |
@@ -299,7 +300,7 @@ WaveCycle 体系将核心工程参数、容差阈值与判定契约集中编码�
 | **D25** | 八因子权重 | 与 D12 严格对齐：$W=[2,1,1,1,1,1,1,1]$；任何调整须先改本表与 「score」（源文件） 并在报告披露。 | 概率打分引擎 「score」（源文件） |
 | **D26** | 江恩周年日容差 | 周年日 ±2 个交易日（含当日）内均视为该周年时间窗。 | 江恩时间窗预登记与比对 |
 | **D27** | 关键结构位筛选 | ① 前高/前低：被 ≥2 次触及的历史极值（极端价位），两次间隔 ≥3 根当前周期 K 线；② 多日未破长影线：影线 ≥ 实体 × 2，顶端=最高价、底端=最低价，其后直到最新的所有收盘均未突破/跌破；③ 未回补跳空；扫描窗口按近 10/30/60 日自适应。 | 「key_levels」（源文件） |
-| **D28** | 数据自检与数据基准脚本 | 必跑 `data_check.py --csv <路径> --source <数据源> --fq <none/qfq/hfq>`；表头列序精确 == `date,open,high,low,close[,volume]`；缺 `--source` / `--fq` 判不通过；退出码 1 熔断。 | 「data_check」（源文件） |
+| **D28** | 数据自检与数据基准脚本 | 必跑 `data_check.py --csv <路径> --source <数据源> --fq <none/qfq/hfq>`（日线默认 `qfq`，见 D65）；表头列序精确 == `date,open,high,low,close[,volume]`；缺 `--source` / `--fq` 判不通过；退出码 1 熔断。 | 「data_check」（源文件） |
 | **D29** | 失效价位触发判定脚本 | 必跑 `invalidation_check.py --csv <路径> --level "价位|break-down/break-up|方案|类型|规则"`（可重复）`[--since]` `[--confirm-bars 2]`；规则失效按极端价位立即生效，结构失效用确认窗口。 | 「invalidation_check」（源文件） |
 | **D30** | 道氏状态读数脚本 | `swings.py --dow`（可加 `--weekly`）：先做 D11 显著筛，取最近 3 高 3 低，3 点判 2 点定；翻转裁决由模型按 D22 执行，脚本不判翻转。 | 「swings」（源文件） |
 | **D31** | Rule 数值判定脚本 | `rule_check.py --wave "标签:起点价:终点价"`（可重复）`[--dir up/down]`；端点取含影线真实极值，支持 k=5/3/1 自适应；仅数值类规则，形态类由模型逐条核对。 | 「rule_check」（源文件） |
@@ -331,6 +332,12 @@ WaveCycle 体系将核心工程参数、容差阈值与判定契约集中编码�
 | **D57** | 交付文档二元制 | 归档目录内仅允许 「分析报告_*」（源文件） 与 「网页报告_*」（源文件），外加永久保留的 `图表/`。 | 交付审查 |
 | **D58** | 图表素材永久保留 | `图表/` 子目录与原始 PNG 随归档永久保留，禁止任何模式清理。 | 交付资产规范 |
 | **D59** | 标的代码前缀映射 | 沪市 `sh`、深市 `sz`、北交所 `bj`；指数可用 `sh000001` 或传统源 `1A0001`。 | 行情接口适配 |
+| **D60** | 短期支撑压力级别映射 | 逐浪档位→级别的唯一真源为 11 号知识文件：1 浪压力 0.382/0.5/0.618→1/2/3 级；2 浪支撑 0.236→1 级、0.382→2 级、0.5/0.618/0.786→3 级；3 浪压力 1.0/1.618/2.618/4.236→1/2/3/3 级；4 浪支撑 0.236→1 级、0.382→2 级、0.5/0.618→3 级；5 浪三主线按算出价位升序赋 1/2/3 级；浪起点计 3 级（结构锚定，非比率）。写法固定「N 级」，禁用「弱／中强／强」。 | 「short_term_sr」（源文件）、报告第 6 章 |
+| **D61** | 多周期共振轴 | 只跨时间轴判定：日线（交付 3 层或 4 层均只算 1 条轴）＋ 60m／30m／15m；日线 4 层嵌套内部重叠位不单算一级。仅同方向（支撑／压力）且同浪族（驱动／调整）可配对；数不出浪型的周期整轴退出并留行披露。 | 「short_term_sr」（源文件）、12 号知识文件 |
+| **D62** | 共振星级公式 | 以最高时间轴为锚：星数 ＝（距锚 ≤1% 的轴数 − 1）× 1 ＋（距锚 1%–3% 的轴数）× 0.5；上限 3 星，超出记「≥3 星」。写法固定「N 星」，不得与「N 级」混用。**唯一实现为 `scripts/short_term_sr.py`，模型不得手算星数或改写结论；表格整理同样由该脚本 `--format tables` 完成。** | 「short_term_sr」（源文件） |
+| **D63** | 跨周期价格基准对齐 | 各轴用自身数据独立算位后，取最近共同交易日收盘价比值 k 折算；k 与 1 的偏离 ≤0.5% 直接比价，>0.5% 将分钟轴价位乘 k 折算并披露；无法确定共同交易日时禁止输出跨轴共振，只出单轴结果。 | 12 号知识文件第 6 节 |
+| **D64** | 共振放宽档 | 1% 内计 1 星（沿用 D6 误差带），1%–3% 计 0.5 星。3% 仅用于星级判定，严禁用于失效价位、目标测算与八因子打分。 | `short_term_sr.py --wide-tol` |
+| **D65** | 日线复权口径 | 日线分析默认前复权（`qfq`），报告全部价位（含斐波那契、江恩、失效价位）即同花顺/东财前复权可见价位，与 `02_案例库` 口径一致。仅当用户显式要求时改用后复权（`hfq`）并在分析前提披露。复权只改变价格数值、不改变形态与比例，换口径不得据此推翻既有数浪；除权后 qfq 历史价整体漂移，更新报告必须全量重算失效价位并在第 8 章登记。分钟分形层仍独立 `none`（D42）。 | `data_check.py --fq`、报告【1 分析前提】 |
 
 
 ---
@@ -395,9 +402,10 @@ WaveCycle 体系将核心工程参数、容差阈值与判定契约集中编码�
 ### 1.3 复权模式规范与基准披露三要素
 在技术分析与波浪形态度量中，必须保证历史价格的几何连续性：
 1. **复权口径（与线上 references/data.md 对齐）**：
-   - **长周期/大级别默认目标后复权（HFQ）**：后复权的历史点位不随新分红/除权漂移，同一区间跨次重跑可复现，适合大级别框架分析；
-   - **可执行路径与降级**：仅当 a-stock-data 的复权因子完整、匹配且 `apply_adjust` 结果通过自检时使用 hfq；否则自动降级为腾讯 `fqkline` 前复权（QFQ）并在报告中披露实际口径，**禁止自行推算因子、禁止谎称 hfq**；
-   - **短中期/分钟层**：短中期分析可用 QFQ；分钟分形层一律独立不复权（`none`，D42），与日线只做时间戳锚定，禁止跨周期混算价格。
+   - **日线默认前复权（QFQ）**：报告全部价位即同花顺/东财前复权可见价位，与 `02_案例库` 既有口径一致，便于用户直接对照行情软件；腾讯 `fqkline` + 新浪因子链路可直接产出；
+   - **可执行路径与可选后复权**：仅当用户显式要求后复权（HFQ）时，才须确保 a-stock-data 的复权因子完整、匹配且 `apply_adjust` 结果通过自检，否则拒绝而非静默降级，**禁止自行推算因子、禁止谎称 hfq**；
+   - **不变式与漂移代价**：hfq 与 qfq 只差一个常数比例因子，形态、比例、时间关系完全相同，换口径不得据此推翻既有数浪；但除权后 qfq 历史价格整体漂移，更新报告时必须全量重算失效价位并在第 8 章登记；
+   - **分钟层**：分钟分形层一律独立不复权（`none`，D42），与日线只做时间戳锚定，禁止跨周期混算价格。
 2. **基准披露三要素**：在生成的《分析市场准备卡》与最终报告中，必须完整披露：
    $$\text{Benchmark} = \{\text{复权方式: hfq/qfq/none（实际值）}, \quad \text{数据源名称: 如腾讯 fqkline}, \quad \text{数据截至时间戳: YYYY-MM-DD HH:MM}\}$$
 3. **口径漂移禁令**：同一标的的日线与分钟线必须分别登记各自复权口径；报告中不得只写"复权"而不注明 hfq/qfq/none。
@@ -433,43 +441,131 @@ WaveCycle 体系将核心工程参数、容差阈值与判定契约集中编码�
 ### 2.1 自动化拉取与格式清洗脚本
 数据抓取脚本必须无条件遵守 `00_系统工程规范`，在写入磁盘前完成列序重排与路径隔离：
 
+> **可执行片段（唯一取数入口）**：常规 A 股日/周/月 K 线按下面的片段取数，**不需要加载 a-stock-data**；仅当需要非常用端点（研报、资金面、期权、公告、打板等）时才整篇加载它。分钟线走 §1.4 的 mkline 协议；其他市场以用户提供数据为准。
+
 ```python
-# 数据清洗与临时落盘标准实现
+"""最小可执行取数片段：A 股日/周/月 K 线（腾讯 fqkline）+ 复权（新浪因子）。
+
+输出契约：<TEMP>/wavecycle/<symbol>_<freq>_<fq>.csv（date,open,high,low,close,volume）
+         同名 .metadata.json（source/fq/as_of/timezone/csv_sha256）
+可直接喂 data_check.py / preflight.py；周/月线改 freq="week"/"month"。
+"""
+import hashlib
+import json
 import os
 import tempfile
-import pandas as pd
+from datetime import datetime
 
-def fetch_and_clean_kline(symbol: str) -> str:
-    # 1. 调用网络接口拉取原生数据 (假设返回 df_raw)
-    df_raw = request_kline_api(symbol) 
-    
-    # 2. 列序强类型重排铁律 (D28)
-    # 腾讯等接口 close 排在 high 前，必须显式重排为: date, open, high, low, close, volume
-    target_columns = ['date', 'open', 'high', 'low', 'close', 'volume']
-    df_cleaned = df_raw[target_columns].copy()
-    
-    # 3. 数据类型强制断言
-    df_cleaned['date'] = df_cleaned['date'].astype(str)
-    for col in ['open', 'high', 'low', 'close', 'volume']:
-        df_cleaned[col] = pd.to_numeric(df_cleaned[col], errors='coerce')
-    
-    # 4. 极端值校验 (High 必须为最高, Low 必须为最低)
-    assert (df_cleaned['high'] >= df_cleaned[['open', 'close', 'low']].max(axis=1)).all(), "数据错误: 存在 high 小于其他价格的异常行"
-    assert (df_cleaned['low'] <= df_cleaned[['open', 'close', 'high']].min(axis=1)).all(), "数据错误: 存在 low 大于其他价格的异常行"
-    
-    # 5. 落盘至系统临时目录 (%TEMP%)
-    temp_dir = tempfile.gettempdir()
-    csv_filename = f"{symbol}_daily_qfq.csv"
-    output_path = os.path.join(temp_dir, csv_filename)
-    df_cleaned.to_csv(output_path, index=False)
-    
-    return output_path
+import pandas as pd
+import requests
+
+UA = {"User-Agent": "Mozilla/5.0"}
+KLINE_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+FACTOR_URL = "https://finance.sina.com.cn/realstock/company/{symbol}/{kind}.js"
+PRICE_KEYS = ("open", "high", "low", "close")
+
+
+def to_frame(rows):
+    """腾讯列序是 date,open,close,high,low,volume —— 先重排为标准 OHLC 列序（D28）。"""
+    df = pd.DataFrame(rows).iloc[:, :6]
+    df.columns = ["date", "open", "close", "high", "low", "volume"]
+    df["date"] = df["date"].astype(str).str[:10]
+    for col in PRICE_KEYS + ("volume",):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df[["date", "open", "high", "low", "close", "volume"]]
+
+
+def fetch_raw(symbol, freq="day", start="1990-01-01", end=None, pages=12):
+    """腾讯 fqkline 不复权全历史：单请求上限 1300 根，按首根日期向前翻页。"""
+    end = end or datetime.now().strftime("%Y-%m-%d")
+    segs, cursor = [], end
+    for _ in range(pages):
+        r = requests.get(KLINE_URL, headers=UA, timeout=25,
+                         params={"param": f"{symbol},{freq},{start},{cursor},1300,"})
+        r.raise_for_status()
+        rows = (r.json().get("data") or {}).get(symbol, {}).get(freq) or []
+        if not rows:
+            break
+        segs.append(rows)
+        if rows[0][0] <= start:
+            break
+        cursor = (pd.Timestamp(rows[0][0]) - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+    if not segs:
+        raise RuntimeError(f"腾讯 fqkline 无数据：{symbol}/{freq}")
+    return (pd.concat([to_frame(s) for s in segs], ignore_index=True)
+            .drop_duplicates("date").sort_values("date").reset_index(drop=True))
+
+
+def sina_factor(symbol, kind):
+    """新浪复权因子（kind=qfq|hfq，日期升序）；响应尾部挂 base64 注释，必须 raw_decode。"""
+    url = FACTOR_URL.format(symbol=symbol, kind=kind)
+    r = requests.get(url, timeout=15,
+                     headers={"User-Agent": "Mozilla/5.0", "Referer": "https://finance.sina.com.cn/"})
+    r.raise_for_status()
+    text = r.text
+    data, _ = json.JSONDecoder().raw_decode(text[text.find("{"):])
+    items = ({"date": it["d"], "factor": float(it["f"])} for it in data.get("data", []))
+    return sorted(items, key=lambda x: x["date"])
+
+
+def check_factors(hfq, qfq):
+    """hfq 最早因子=1、qfq 最新因子=1、同日 hfq×qfq 恒定；任一不成立即降级 qfq 并披露。"""
+    assert hfq and qfq, "复权因子为空"
+    assert hfq[0]["factor"] == 1.0, "hfq 最早因子不为 1.0"
+    assert qfq[-1]["factor"] == 1.0, "qfq 最新因子不为 1.0"
+    qfq_map = {x["date"]: x["factor"] for x in qfq}
+    products = {round(x["factor"] * qfq_map[x["date"]], 9) for x in hfq if x["date"] in qfq_map}
+    assert len(products) == 1, f"hfq×qfq 不恒定：{products}"
+
+
+def apply_adjust(df, factors, kind):
+    """hfq 乘因子、qfq 除因子（方向传反不报错，只会把价格整体放大/缩小数倍）。"""
+    out, idx, cur = [], 0, None
+    for row in df.to_dict("records"):
+        while idx < len(factors) and factors[idx]["date"] <= row["date"]:
+            cur = factors[idx]["factor"]
+            idx += 1
+        if cur is None:
+            raise ValueError(f"{row['date']} 无复权因子")
+        for key in PRICE_KEYS:
+            row[key] = round(row[key] * cur, 4) if kind == "hfq" else round(row[key] / cur, 4)
+        out.append(row)
+    return pd.DataFrame(out)
+
+
+def write_csv(df, symbol, freq, fq, source):
+    """落盘 %TEMP% + 同名 metadata；csv_sha256 缺失时 data_check 拒绝作为正式数据链。"""
+    assert (df["high"] >= df[["open", "close", "low"]].max(axis=1)).all(), "high 非最高"
+    assert (df["low"] <= df[["open", "close", "high"]].min(axis=1)).all(), "low 非最低"
+    out_dir = os.path.join(tempfile.gettempdir(), "wavecycle")
+    os.makedirs(out_dir, exist_ok=True)
+    csv_path = os.path.join(out_dir, f"{symbol}_{freq}_{fq}.csv")
+    df.to_csv(csv_path, index=False, lineterminator="\n")
+    with open(csv_path, "rb") as fh:
+        digest = hashlib.sha256(fh.read()).hexdigest()
+    meta = {"source": source, "fq": fq, "as_of": f"{df['date'].iloc[-1]} 15:00",
+            "timezone": "Asia/Shanghai", "csv_sha256": digest}
+    with open(os.path.splitext(csv_path)[0] + ".metadata.json", "w", encoding="utf-8") as fh:
+        json.dump(meta, fh, ensure_ascii=False, indent=2)
+    return csv_path
+
+
+def main(symbol="sh603259", freq="day", fq="qfq"):
+    raw = fetch_raw(symbol, freq)
+    if fq == "none":
+        return write_csv(raw, symbol, freq, fq, "腾讯 fqkline")
+    hfq, qfq = sina_factor(symbol, "hfq"), sina_factor(symbol, "qfq")
+    check_factors(hfq, qfq)
+    adjusted = apply_adjust(raw, hfq if fq == "hfq" else qfq, fq)
+    return write_csv(adjusted, symbol, freq, fq, "腾讯 fqkline + 新浪因子")
 ```
+
+拿到返回的 CSV 路径后，依次跑 「data_check」（源文件）（带 `--fq` 与 `--require-metadata`）和 「preflight」（源文件）。复权口径只能取 `hfq`／`qfq`／`none` 三者之一，并在报告【1 分析前提】如实披露。
 
 ### 2.2 运行 「data_check」（源文件） 质量守门
 执行质检脚本，验证 CSV 列序契约与元信息完整性：
 ```bash
-python 06_技能_skill/scripts/data_check.py --csv "<标准化CSV绝对路径>" --source "<数据源>" --fq hfq --require-metadata
+python 06_技能_skill/scripts/data_check.py --csv "<标准化CSV绝对路径>" --source "<数据源>" --fq qfq --require-metadata
 ```
 - **检查内容**：首行表头精准度、是否存在空行/NaN/无穷大值、交易日期是否单调严格递增、是否有重复日期。
 - **熔断处理**：若返回状态码非 0，必须停止流水线并输出错误日志，排查数据源污染，严禁带病运行。
@@ -578,7 +674,7 @@ python 06_技能_skill/scripts/key_levels.py --csv "<标准化CSV绝对路径>"
 【1. 标的基本信息与数据契约】
 - 标的名称/代码：上证指数 / sh000001 (1A0001)
 - 行情数据路径：%TEMP%\sh000001_daily_qfq.csv (SHA-256: e3b0c44298fc1c149afbf4c8996fb924...)
-- 基准三要素：后复权 (HFQ) | 腾讯接口 fqkline | 数据截至 2026-11-03
+- 基准三要素：前复权 (QFQ) | 腾讯接口 fqkline | 数据截至 2026-11-03
 - data_check 结果：[PASS] 列序严格匹配 date,open,high,low,close,volume；连续性正常
 
 【2. 行情全景与宏观框架】
@@ -623,12 +719,13 @@ python 06_技能_skill/scripts/key_levels.py --csv "<标准化CSV绝对路径>"
 
 本条是**物理阻断门禁**，不是建议。未完成本节询问并取得答复之前，禁止进入 Step 02 数浪。
 
-1. **触发时机**：`data_check` / `preflight` 通过、数据自检表与道氏读数已产出之后，正式划分波浪层级之前。
+1. **触发时机**：**首次取数之前**，与 §1.1 标的代码确认合并为同一次交互（一屏问完：标的代码／歧义裁决、交付 3 层还是日线 4 层、选 4 层时的展开范围）。全流程只问这一次，答复即锁定，后续不得再问第二遍。
 2. **前置判断**：用户请求已写明交付层数（如“按 4 层分析”）与范围时，直接登记复用、不重复询问；**未写明时不得由模型自行默认 3 层后跳过**。
-3. **必须询问的内容**（调用宿主交互工具；ZCode 为 `AskUserQuestion`，其他宿主用其对应确认机制）：
-   - 一问：日线细分交付 **3 层**（常规）还是 **4 层**（大级别股指、长史板块：日线上可直接分出第 4 层）；
-   - 若选 4 层，二问范围：**全分析树** 还是 **指定第三层父浪**（写入 `fourth_layer_roots`，「analysis_scope」（源文件） 要求该路径至多为第三层）。
-4. **提问可附证据**：历史跨度 ≥10 年或 ≥2500 根日 K 时可提示“建议 4 层”；提示不能替代询问。
+3. **必须询问的内容**（与 §1.1 标的代码确认合并为同一次交互；调用宿主交互工具，ZCode 为 `AskUserQuestion`，其他宿主用其对应确认机制）：
+   - 一问：标的代码（名称有歧义时在同一问里裁决，例如 A 股 603259 还是港股 02359）；
+   - 二问：日线细分交付 **3 层**（常规）还是 **4 层**（大级别股指、长史板块：日线上可直接分出第 4 层）；
+   - 若选 4 层，三问范围：**全分析树** 还是 **指定第三层父浪**（写入 `fourth_layer_roots`，「analysis_scope」（源文件） 要求该路径至多为第三层）。
+4. **提问可附建议**：按标的类型给定性建议（大级别股指／长史板块建议 4 层，普通个股默认 3 层）——建议只是选项旁的一句说明，不能替代询问；取数前拿不到历史长度，不得以“等数据自检完再问”为由推迟，数据自检后也**不再二次询问**。
 5. **落盘登记**：答复写入报告【分析前提】的“细分深度来源”行（`默认-3层`／`用户确认-3层`／`用户确认-4层`）与准备卡第 5 项；选 4 层须同时登记范围。
 6. **禁止行为**：以“数据量大、时间紧、用户大概想要 3 层”为由跳过询问；以准备卡示例值冒充用户答复。
 
@@ -1389,6 +1486,8 @@ ew_chart.py 绘图完成 ──┤
 │     ├── 替代方案硬规则失效价位
 │     └── 结构观察位与假突破确认边界（连续 2 根收盘价）
 ├── 6. 综合交易计划（Trading Plan）
+│     ├── 6.1 短期支撑压力表（按浪型 1/2/3 级，口径见 11 号知识文件）
+│     ├── 6.2 多周期共振结论表（日线/60m/30m/15m，口径见 12 号知识文件）
 │     ├── 仓位控制与仓位闸门级别（轻仓/标准/进取/观望）
 │     ├── 进场触发条件与价格区间
 │     ├── 严格保护性止损设置与保本上移规则
@@ -1416,6 +1515,7 @@ ew_chart.py 绘图完成 ──┤
 - [ ] **门禁 9（图表素材永久保留）**：`图表/` 子目录及所有原始 PNG 图片完好保留；
 - [ ] **门禁 10（报告 8 章节完整）**：分析报告八大核心章节齐全，包含完整的八因子打分、双方案分析、独立失效位与交易计划；
 - [ ] **门禁 11（交互留痕，EG-07）**：【分析前提】含唯一“分钟分形层”行且取值合法，与分钟图组一致；`细分深度来源` 与门禁 A 答复一致（4 层须含 `fourth_layer_roots` 范围）。
+- [ ] **门禁 12（短期支撑压力与共振表）**：第 6 章两张表非空；「级别」列只允许「1 级／2 级／3 级」，「星数」列只允许「0.5 星／1 星／1.5 星／2 星／2.5 星／3 星／≥3 星」，「方向」列只允许「支撑／压力」；未数出浪型的周期、未启用分钟分形层时须有降级行，禁止留空或省略。两表须由 `scripts/short_term_sr.py --format tables --merge-into data.json --apply` 产出，禁止手工填写或改写价位与星数。
 
 
 ---
