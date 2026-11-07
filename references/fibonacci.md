@@ -1,12 +1,12 @@
-> **打包说明**：本文件由 「01_知识库_knowledge/04_斐波那契数学基础_fibonacci」（源文件） 转换生成（2 代，`references/fibonacci.md`），**禁止直接修改，修改请改源**。
+> **打包说明**：本文件由 `01_知识库_knowledge/04_斐波那契数学基础_fibonacci.md` 转换生成（2 代，`references/fibonacci.md`），**禁止直接修改，修改请改源**。
 >
 
 # 04 斐波那契数学基础（Fibonacci Mathematics）
 
 > **文献真源与溯源声明**  
-> - **核心文献**：小罗伯特·R·普莱切特 (Robert R. Prechter, Jr.)、阿尔弗雷德·J·弗罗斯特 (Alfred J. Frost) 著《艾略特波浪理论：市场行为的关键》（原书第11版），机械工业出版社。引用章节：「03-波浪理论的历史背景与数学背景」（源文件）（斐波那契数列，黄金比率，第 99–140 页）、「04-比率分析与斐波那契时间数列」（源文件）（一、比率分析；二、应用比率分析；三、多重波浪关系；四、斐波那契时间数列，第 141–168 页）。  
+> - **核心文献**：小罗伯特·R·普莱切特 (Robert R. Prechter, Jr.)、阿尔弗雷德·J·弗罗斯特 (Alfred J. Frost) 著《艾略特波浪理论：市场行为的关键》（原书第11版），机械工业出版社。引用章节：「03-波浪理论的历史背景与数学背景」（原著章节）（斐波那契数列，黄金比率，第 99–140 页）、「04-比率分析与斐波那契时间数列」（原著章节）（一、比率分析；二、应用比率分析；三、多重波浪关系；四、斐波那契时间数列，第 141–168 页）。  
 > - **对照文献**：Frost & Prechter, *Elliott Wave Principle: Key to Market Behavior* (10th ed., 2005), New Classics Library. Chapter 3: Historical and Mathematical Background of the Wave Principle. Chapter 4: Ratio Analysis and Fibonacci Time Sequences.  
-> - **辅助文献**：罗伯特·雷亚 (Robert Rhea) 著《平均指数史话》（*The Story of the Averages*, 1934）；格伦·尼利 (Glenn Neely) 著《波浪理论新解》（*Mastering Elliott Wave*），Windsor Books. 「ch02」（源文件）, 「ch06」（源文件）.  
+> - **辅助文献**：罗伯特·雷亚 (Robert Rhea) 著《平均指数史话》（*The Story of the Averages*, 1934）；格伦·尼利 (Glenn Neely) 著《波浪理论新解》（*Mastering Elliott Wave*），Windsor Books. 「ch02」（原著章节）, 「ch06」（原著章节）.  
 > - **理论属性**：本文件为波浪理论数学公理体系与经典斐波那契比率、时间数列的纯理论指南。只阐述经典原著中确立的数学公式、自然衍生比率与波浪几何投影关系，坚决剔除任何工程容差、实战代码与算法判定。
 
 ---

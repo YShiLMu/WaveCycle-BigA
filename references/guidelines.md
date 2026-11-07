@@ -1,10 +1,10 @@
-> **打包说明**：本文件由 「01_知识库_knowledge/07_波浪准则_guidelines」（源文件） 转换生成（2 代，`references/guidelines.md`），**禁止直接修改，修改请改源**。
+> **打包说明**：本文件由 `01_知识库_knowledge/07_波浪准则_guidelines.md` 转换生成（2 代，`references/guidelines.md`），**禁止直接修改，修改请改源**。
 >
 
 # 07 波浪准则（Wave Guidelines）
 
 > **文献真源与溯源声明**  
-> - **核心文献**：小罗伯特·R·普莱切特 (Robert R. Prechter, Jr.)、阿尔弗雷德·J·弗罗斯特 (Alfred J. Frost) 著《艾略特波浪理论：市场行为的关键》（原书第11版），机械工业出版社。引用章节：「02-波浪构造准则」（源文件）（第二章 波浪构造准则总结与正文，第 53–98 页）。  
+> - **核心文献**：小罗伯特·R·普莱切特 (Robert R. Prechter, Jr.)、阿尔弗雷德·J·弗罗斯特 (Alfred J. Frost) 著《艾略特波浪理论：市场行为的关键》（原书第11版），机械工业出版社。引用章节：「02-波浪构造准则」（原著章节）（第二章 波浪构造准则总结与正文，第 53–98 页）。  
 > - **对照文献**：Frost & Prechter, *Elliott Wave Principle: Key to Market Behavior* (10th ed., 2005), New Classics Library. Chapter 2: Guidelines of Wave Formation (Alternation, Depth of Corrective Waves, Wave Equality, Charting Waves, Channeling, Volume, Personality, Summary of Guidelines, pp. 53–98).  
 > - **理论属性**：本文件为艾略特波浪理论统计量化与高概率规律的**纯理论指导准则库（Guidelines）**。用于在规则排除了非法构型后，对合法候选数浪方案进行概率排序与置信度打分。准则描述的是统计经验上的高倾向性表现（Usually / Often / Tend to），违反准则不构成方案一票否决，但会显著降低该数法的概率权重。纯粹阐述原著量化比率与几何规律，彻底剥离工程脚本与交易指令。
 
@@ -396,8 +396,8 @@ $$\text{数浪方案置信度} = \prod_{\text{Rules}} \mathbb{I}(\text{Rule Pass
 | **G-IMP-05** | 斜率特征 | 推动浪 | 浪 3 中心斜率全周期最陡峭 | 浪 3 斜率平缓降权 |
 | **G-IMP-06** | 延长概率 | 推动浪 | 浪 3 最常延长；浪 1 最罕见；同序号延长 | 浪 3 延长赋予基准高概率 |
 | **G-IMP-07** | 波浪等同 | 推动浪 | 浪 3 延长时，$L_5 \approx 1.0 \times L_1$ 或 $0.618 \times L_1$ | 命中黄金比率大幅加分 |
-| **G-IMP-08** | 浪 5 延长 | 推动浪 | $L_5 \approx 1.618 \times |P_{\text{end}(3)} - P_{\text{start}(1)}|$ | 符合 1.618 净位移加分 |
-| **G-IMP-09** | 浪 1 延长 | 推动浪 | $L_1 \approx 0.618 \times |P_{\text{end}(5)} - P_{\text{start}(3)}|$ | 测算相符加分 |
+| **G-IMP-08** | 浪 5 延长 | 推动浪 | $L_5 \approx 1.618 \times \|P_{\text{end}(3)} - P_{\text{start}(1)}\|$ | 符合 1.618 净位移加分 |
+| **G-IMP-09** | 浪 1 延长 | 推动浪 | $L_1 \approx 0.618 \times \|P_{\text{end}(5)} - P_{\text{start}(3)}\|$ | 测算相符加分 |
 | **G-IMP-10** | 浪 4 深度 | 推动浪 | 浪 4 终点落入前一浪 3 之子浪四价格区间 | 精准落入区间加分 |
 | **G-IMP-11** | 黄金分割 | 推动浪 | 浪 4 在时间或空间上将全浪分割为 0.618 | 满足黄金分割加分 |
 | **G-IMP-12** | 成交量 | 推动浪 | 浪 3 量能峰值，浪 5 量能背离 | 量价配合完美加分 |

@@ -1,4 +1,4 @@
-> **打包说明**：本文件由 「03_工作流_workflow/01_数据获取与市场分析准备」（源文件） 转换生成（2 代，`references/data.md`），**禁止直接修改，修改请改源**。
+> **打包说明**：本文件由 `03_工作流_workflow/01_数据获取与市场分析准备.md` 转换生成（2 代，`references/data.md`），**禁止直接修改，修改请改源**。
 >
 
 # 数据获取协议
@@ -63,7 +63,7 @@
 
 ### 1.4 分钟分形层切片协议（Minute Fractal Slicing，D42）
 
-分钟分形层是**附加验证层**：不参与日线交付深度编号，是否启用由 Step 02 的「门禁 B」询问用户后决定（见 「02_数浪实战与多重候选推演」（源文件））。启用后唯一入口为 `scripts/minute_slice.py`，**三轮交互**，脚本只产出切片与摆动候选事实，浪级/形态/完成状态一律由模型裁决。
+分钟分形层是**附加验证层**：不参与日线交付深度编号，是否启用由 Step 02 的「门禁 B」询问用户后决定（见 `references/workflow.md`）。启用后唯一入口为 `scripts/minute_slice.py`，**三轮交互**，脚本只产出切片与摆动候选事实，浪级/形态/完成状态一律由模型裁决。
 
 | 轮次 | 动作 | 脚本命令 | 产出与裁决 |
 | :--- | :--- | :--- | :--- |
@@ -90,7 +90,7 @@
 ### 2.1 自动化拉取与格式清洗脚本
 数据抓取脚本必须无条件遵守 `00_系统工程规范`，在写入磁盘前完成列序重排与路径隔离：
 
-> **可执行片段（唯一取数入口）**：常规 A 股日/周/月 K 线按下面的片段取数，**不需要加载 a-stock-data**；仅当需要非常用端点（研报、资金面、期权、公告、打板等）时才整篇加载它。分钟线走 §1.4 的 mkline 协议；其他市场以用户提供数据为准。
+> **可执行片段（唯一取数入口）**：常规 A 股日/周/月 K 线按下面的片段取数，**不需要加载 a-stock-data**；仅当需要非常用端点（研报、资金面、期权、公告、打板等）时才整篇加载它。分钟线走 §1.4「分钟分形层切片协议」的 mkline 协议；其他市场以用户提供数据为准。
 
 ```python
 """最小可执行取数片段：A 股日/周/月 K 线（腾讯 fqkline）+ 复权（新浪因子）。
@@ -224,24 +224,24 @@ def main(symbol="sh603259", freq="day", fq="qfq"):
     return write_csv(adjusted, symbol, freq, fq, "腾讯 fqkline + 新浪因子", evidence)
 ```
 
-拿到返回的 CSV 路径后，依次跑 「data_check」（源文件）（带 `--fq` 与 `--require-metadata`）和 「preflight」（源文件）。复权口径只能取 `hfq`／`qfq`／`none` 三者之一，并在报告【1 分析前提】如实披露。
+拿到返回的 CSV 路径后，依次跑 `scripts/data_check.py`（带 `--fq` 与 `--require-metadata`）和 `scripts/preflight.py`。复权口径只能取 `hfq`／`qfq`／`none` 三者之一，并在报告【1 分析前提】如实披露。
 
-metadata 的 `adjust` 块是复权证据（kind、因子边界、hfq×qfq 乘积恒定、因子 SHA-256）。「data_check」（源文件） 对 `qfq` 允许"声明未验证"并披露；对 `hfq` 无 `adjust` 块或校验失败直接判不通过，禁止以声明代替验证。
+metadata 的 `adjust` 块是复权证据（kind、因子边界、hfq×qfq 乘积恒定、因子 SHA-256）。`scripts/data_check.py` 对 `qfq` 允许"声明未验证"并披露；对 `hfq` 无 `adjust` 块或校验失败直接判不通过，禁止以声明代替验证。
 
-### 2.2 运行 「data_check」（源文件） 质量守门
+### 2.2 运行 `scripts/data_check.py` 质量守门
 执行质检脚本，验证 CSV 列序契约与元信息完整性：
 ```bash
-python 06_技能_skill/scripts/data_check.py --csv "<标准化CSV绝对路径>" --source "<数据源>" --fq qfq --require-metadata
+python scripts/data_check.py --csv "<标准化CSV绝对路径>" --source "<数据源>" --fq qfq --require-metadata
 ```
 - **检查内容**：首行表头精准度、是否存在空行/NaN/无穷大值、交易日期是否单调严格递增、是否有重复日期。
 - **熔断处理**：若返回状态码非 0，必须停止流水线并输出错误日志，排查数据源污染，严禁带病运行。
 
-### 2.3 运行 「preflight」（源文件） 提取行情全景摘要
+### 2.3 运行 `scripts/preflight.py` 提取行情全景摘要
 通过预检集成脚本提取关键摘要：
 ```bash
-python 06_技能_skill/scripts/preflight.py --csv "<标准化CSV绝对路径>" --metadata "<同stem.metadata.json>" --require-metadata
+python scripts/preflight.py --csv "<标准化CSV绝对路径>" --metadata "<同stem.metadata.json>" --require-metadata
 ```
-「preflight」（源文件） 自动在终端打印并输出以下结构化内容：
+`scripts/preflight.py` 自动在终端打印并输出以下结构化内容：
 1. **行情全局基本面**：数据起点日期、终点日期、总 K 线根数、历史最高点（含日期）、历史最低点（含日期）、最新收盘价。
 2. **道氏趋势状态（D22 / D30）**：自动分析最近的 3 个波峰与 3 个波谷，**3 点判、2 点定**——牛市 = 更高的高点 + 更高的低点；熊市 = 更低的高点 + 更低的低点；其余为结构冲突，按震荡处理并披露张力。第 3 点仅作一致性校验。
 3. **尾部摆动点分布（D40）**：默认截断输出最近 40 个摆动极值点（索引、日期、价格、多空性质），为后续细分提供微观骨架。
