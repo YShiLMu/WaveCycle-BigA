@@ -43,6 +43,35 @@ import pandas as pd
 
 CONTRACT_COLS = ["date", "open", "high", "low", "close"]  # 数据契约列序（references/workflow.md §00-1.1）
 
+# 修复指引（键 = 自检表"检查项"名称，须与 rows 中的名称逐字一致；D28 数据契约相关根因）
+HINTS = {
+    "表头契约":
+        "→ 表头必须且只能为 date,open,high,low,close(,volume)；腾讯原始返回为 date,open,close,high,low,volume，需重排（D28）。",
+    "OHLC 合理性":
+        "→ 核对 high ≥ max(open,close) 且 low ≤ min(open,close)；数据源列序错位是最常见根因（D28）。",
+    "日期升序、无重复、可解析":
+        "→ 检查 date 列格式：日线 YYYY-MM-DD、分钟线 YYYY-MM-DD HH:MM:SS；对照 references/data.md §2.1（D28 列序契约）。",
+    "复权口径已标注且全程一致":
+        "→ --fq/--source 必须与 metadata.json 一致（日线 qfq、分钟 none），对照 references/data.md 第 2 节。",
+}
+
+
+def print_hints(failed_names):
+    """对命中已知根因的不通过项打印修复指引；未命中键的项静默跳过。"""
+    hints = [HINTS[name] for name in failed_names if name in HINTS]
+    if hints:
+        print("\n修复指引：")
+        for hint in hints:
+            print("  " + hint)
+
+
+# 异常路径（validate_ohlc / check_metadata 硬拦截，不走 rows）的报错关键词 → HINTS 键映射
+EXC_HINT_KEYWORDS = (
+    (("high < low", "low < 0", "超出 [low, high]", "缺失或非有限"), "OHLC 合理性"),
+    (("日期重复", "未按升序", "缺失日期"), "日期升序、无重复、可解析"),
+    (("元数据", "复权", "--fq"), "复权口径已标注且全程一致"),
+)
+
 
 def load_csv(csv_path):
     """读 CSV，返回 (df 或 None, 表头错误信息)。不做硬拦截，错误交由自检表披露。
@@ -259,6 +288,7 @@ def main(argv=None):
     print("| --- | --- | --- |")
     if df is None:
         print("| 表头契约 | 不通过 | %s |" % err)
+        print_hints(["表头契约"])
         print("\n存在不通过项：退回重新取数或按数据获取协议降级，禁止带病数据进入数浪。")
         return 1
     try:
@@ -270,6 +300,8 @@ def main(argv=None):
         rows, facts = run_checks(df, args.fq, args.source, metadata.get("adjust"))
     except (ValueError, TypeError, KeyError, OSError) as exc:
         print("| 数据有效性 | 不通过 | %s |" % exc)
+        print_hints([key for keywords, key in EXC_HINT_KEYWORDS
+                     if any(word in str(exc) for word in keywords)])
         return 1
     for name, verdict, note in rows:
         print("| %s | %s | %s |" % (name, verdict, note))
@@ -316,6 +348,7 @@ def main(argv=None):
     if failed:
         print("\n存在 %d 项不通过：退回重新取数或按 references/data.md §2.2 降级标注，禁止带病数据进入数浪。"
               % len(failed))
+        print_hints([r[0] for r in failed])
         return 1
     print("\n自检全部通过，可进入数浪。")
     return 0

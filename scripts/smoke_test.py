@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """冒烟测试 —— 验证 pandas / matplotlib / 中文字体可用，且各脚本主流程跑通。
 
-    python smoke_test.py [--keep]
+    python smoke_test.py [--keep] [--force]
 
 覆盖：
 1. key_levels.py —— 合成 CSV（含跳空缺口、长上影/长下影候选）跑三类锚点输出；
@@ -39,6 +39,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 from naming import IMAGE_KEYS, IMAGE_PLACEHOLDERS, chart_png
 
@@ -128,11 +129,42 @@ def gen_html(path):
         f.write(text)
 
 
+def _skill_version():
+    """从安装版 SKILL.md 读 metadata.version；读不到返回 'unknown'（版本未知时标记机制不生效，每次全跑）。"""
+    try:
+        root = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(os.path.dirname(root), "SKILL.md"), encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip().startswith("version:"):
+                    return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return "unknown"
+
+
+def _write_marker():
+    """自检通过后写版本化标记（%TEMP%/wavecycle_smoke_<version>.json）；版本未知时不写（标记机制不生效）。"""
+    version = _skill_version()
+    if version == "unknown":
+        print("提示：未找到 SKILL.md 版本号（源码树运行），跳过标记写入。")
+        return
+    marker = os.path.join(tempfile.gettempdir(), "wavecycle_smoke_%s.json" % version)
+    try:
+        with open(marker, "w", encoding="utf-8") as fh:
+            json.dump({"version": version,
+                       "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                       "python": sys.version.split()[0]}, fh, ensure_ascii=False, indent=2)
+        print("已写自检标记：%s" % marker)
+    except OSError as exc:
+        print("警告：自检标记写入失败（不影响自检结论）：%s" % exc)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="wavecycle 三脚本冒烟测试")
     parser.add_argument("--keep", action="store_true", help="保留临时产物目录")
     parser.add_argument("--dev-root", action="store_true",
                         help="从源码树运行：把 05_模板_templates 映射成临时 assets（仅开发用）")
+    parser.add_argument("--force", action="store_true", help="忽略已有自检标记，强制全量重跑")
     args = parser.parse_args(argv)
 
     for stream in (sys.stdout, sys.stderr):
@@ -140,6 +172,20 @@ def main(argv=None):
             stream.reconfigure(encoding="utf-8")
         except AttributeError:
             pass
+
+    # ---- 版本化自检标记：已通过且版本未变则跳过（--force 强制重跑；版本未知时每次全跑）----
+    version = _skill_version()
+    marker = os.path.join(tempfile.gettempdir(), "wavecycle_smoke_%s.json" % version)
+    if version != "unknown" and not args.force:
+        try:
+            with open(marker, encoding="utf-8") as fh:
+                info = json.load(fh)
+            if info.get("version") == version:
+                print("SMOKE SKIP：自检标记存在且版本匹配（%s，%s）。加 --force 强制重跑。"
+                      % (info.get("version"), info.get("ts")))
+                return 0
+        except (OSError, ValueError):
+            pass  # 标记缺失/损坏 → 照常全量自检
 
     tmp = tempfile.mkdtemp(prefix="wavecycle_smoke_")
     print("临时目录：%s" % tmp)
@@ -750,6 +796,7 @@ def main(argv=None):
         print("临时产物保留于：%s（可重跑或人工检查）" % tmp)
         return 1
     print("\nSMOKE PASSED：全部通过。")
+    _write_marker()
     if not args.keep:
         shutil.rmtree(tmp, ignore_errors=True)
     else:
