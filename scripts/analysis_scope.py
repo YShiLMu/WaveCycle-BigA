@@ -167,6 +167,21 @@ def validate_review(wave):
             raise ValueError(f"历史父浪跨度达 {n_desc}，日线分辨率充裕，必须展开第二层子浪细分，禁止以分辨率不足填报 gaps")
 
 
+def validate_pattern_establishment(wave):
+    """D67：形态成立性三态与证据自洽；旧报告无该字段时跳过（向后兼容）。"""
+    establishment = wave.get("pattern_establishment")
+    if establishment is None:
+        return
+    status = establishment.get("status") if isinstance(establishment, dict) else None
+    if status not in ("confirmed", "candidate", "unverified", "not_required"):
+        raise ValueError("pattern_establishment.status 非法：%r" % (status,))
+    if status == "confirmed" and not establishment.get("evidence"):
+        raise ValueError("形态成立性为 confirmed 时必须给出子段证据")
+    declared = wave.get("pattern_status")
+    if declared is not None and declared != status:
+        raise ValueError("pattern_status 与 pattern_establishment.status 不一致")
+
+
 def validate_scope(scope, depth, names):
     """验证正式交付契约；返回原对象，缺证可保留但须逐浪登记。"""
     if not isinstance(scope, dict) or type(scope.get("version")) is not int or scope["version"] != SCOPE_VERSION:
@@ -236,6 +251,7 @@ def validate_scope(scope, depth, names):
             if any(type(wave.get(key)) is not bool for key in ("completed", "confirmed")):
                 raise ValueError("每浪须登记completed和confirmed布尔值")
             validate_completion(wave)
+            validate_pattern_establishment(wave)
             validate_inspection(wave, scope["data_end"])
             required_text(wave, "evidence")
             if state in ("in_progress", "unresolved"):
@@ -357,6 +373,8 @@ def from_facts(metadata, result, data_start):
                       "completion_status": fact["completion_status"],
                       "pattern": facts.get("group_patterns", {}).get(path, "unknown"),
                       "component_pattern": fact["group_pattern"],
+                      "pattern_status": (fact.get("pattern_establishment") or {}).get("status", "unverified"),
+                      "pattern_establishment": deepcopy(fact.get("pattern_establishment")),
                       "completion_basis": fact["completion_basis"],
                       "internal_structure": deepcopy(fact["internal_structure"]),
                       "parent_identity": deepcopy(fact["parent_identity"]),
@@ -369,6 +387,12 @@ def from_facts(metadata, result, data_start):
             (extra_checks if level > target else records).append(record)
         if used_gaps != set(gaps_by_path):
             raise ValueError("gaps含不存在或最深层的父浪路径")
+        by_path = {w["path"]: w for w in records}
+        root_status = (facts.get("root_pattern_establishment") or {}).get("status", "unverified")
+        for wave in records:
+            parent = wave["path"].rsplit("-", 1)[0] if "-" in wave["path"] else ""
+            wave["component_pattern_status"] = (by_path[parent]["pattern_status"]
+                                                if parent in by_path else root_status)
         scheme["waves"] = records
         scheme["extra_checks"] = extra_checks
     return validate_scope(scope, result["depth"], names)

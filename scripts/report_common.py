@@ -234,6 +234,71 @@ def validate_sr_rows(tname, rows):
                      % (index + 1, stars))
 
 
+STRUCTURE_WORDS = {
+    "zigzag": ("锯齿",),
+    "flat": ("平台",),
+    "triangle": ("三角",),
+    "double_combination": ("联合", "组合", "双锯齿", "双重三浪"),
+    "triple_combination": ("三重三浪", "三锯齿", "联合", "组合"),
+    "impulse": ("推动", "驱动"),
+    "motive": ("推动", "驱动"),
+    "diagonal": ("斜纹", "倾斜三角"),
+}
+CANDIDATE_MARKERS = ("候选", "待定", "未定", "未证", "进行中")
+
+
+def validate_wave_structure_table(data):
+    """D68/EG-08：数浪表「结构」列必须与 analysis_scope 的形态及成立状态一致。
+
+    旧报告（覆盖记录无 pattern_status）跳过，保持向后兼容；新报告一律硬校验。
+    """
+    scope = data.get("analysis_scope") or {}
+    main = next((s for s in scope.get("schemes") or [] if s.get("name") == "主方案"), None)
+    rows = (data.get("tables") or {}).get("主方案数浪") or []
+    if main is None or not rows:
+        return
+    waves = {}
+    for wave in main.get("waves", []) + main.get("extra_checks", []):
+        waves[wave.get("path")] = wave
+    if not any("pattern_status" in w for w in waves.values()):
+        return
+    for i, row in enumerate(rows, 1):
+        path = str(row.get("浪", "")).strip()
+        wave = waves.get(path)
+        if wave is None:
+            fail("主方案数浪第 %d 行浪 %r 未在 analysis_scope 登记（D68）" % (i, path))
+        _check_structure_row(i, path, wave, str(row.get("结构", "")), waves)
+
+
+def _check_structure_row(row_no, path, wave, text, waves):
+    pattern = wave.get("pattern", "unknown")
+    status = wave.get("pattern_status", "unverified")
+    established = status in ("confirmed", "not_required")
+    candidate = any(marker in text for marker in CANDIDATE_MARKERS)
+    words = STRUCTURE_WORDS.get(pattern, ())
+    if pattern == "unknown":
+        wrong = sorted({w for group in STRUCTURE_WORDS.values() for w in group if w in text})
+        if wrong:
+            fail("主方案数浪第 %d 行「%s」形态未定，结构列却写入具体形态 %s（D68）：%r"
+                 % (row_no, path, "、".join(wrong), text))
+        if not candidate:
+            fail("主方案数浪第 %d 行「%s」形态未定，结构列须注明 候选/待定/进行中（D68）：%r"
+                 % (row_no, path, text))
+        return
+    if words and not any(w in text for w in words):
+        fail("主方案数浪第 %d 行「%s」树中形态为 %s，结构列须含 %s（D68）：%r"
+             % (row_no, path, pattern, "／".join(words), text))
+    if not established and not candidate:
+        fail("主方案数浪第 %d 行「%s」形态 %s 尚未成立（%s），结构列须注明 候选/待定（D68）：%r"
+             % (row_no, path, pattern, status, text))
+    if pattern == "double_combination" and "双锯齿" in text:
+        for label in ("W", "Y"):
+            child = waves.get(path + "-" + label, {})
+            if child.get("pattern") != "zigzag" or child.get("pattern_status") != "confirmed":
+                fail("主方案数浪第 %d 行「%s」标为双锯齿，但 %s 段未各自成立为锯齿"
+                     "（R-COMB-02/D68）" % (row_no, path, label))
+
+
 def validate(data, legacy_ok=False):
     """校验 data.json 并返回 (名称, 代码, 时间戳)；失败即 fail()。"""
     name = validate_component(data.get("标的名称", ""), "标的名称")
@@ -351,6 +416,7 @@ def validate(data, legacy_ok=False):
         validate_scope(data.get("analysis_scope"), depth, active_plans)
     except ValueError as exc:
         fail(str(exc))
+    validate_wave_structure_table(data)
 
     return name, code, stamp
 
@@ -385,7 +451,11 @@ def render_web_premise(data):
 
 
 def web_wave_pattern(wave):
-    """有内部组时采用其浪型；未定细型仅列该方案要求的候选类型。中英文专业命名严密区分驱动与推动。"""
+    """有内部组时采用其浪型；未定细型仅列该方案要求的候选类型。
+
+    D67/EG-08：只有父级形态已成立时，才允许按父级语境推导子浪的作用角色
+    （如锯齿的 A/C 驱动、联合形的分量调整）；父级未成立时不得自动贴具体形态。
+    """
     labels = {
         "impulse": "推动浪 (Impulse)",
         "diagonal": "倾斜三角形/斜纹浪 (Diagonal)",
@@ -398,42 +468,53 @@ def web_wave_pattern(wave):
     }
     pattern = wave.get("pattern", "unknown")
     parent_pattern = wave.get("component_pattern")
+    parent_established = wave.get("component_pattern_status") in ("confirmed", "not_required")
     component = wave["path"].rsplit("-", 1)[-1]
+
+    if not parent_established and pattern == "unknown":
+        return _mark_candidate("未定（父级形态未成立）", wave)
 
     # 特殊处理调整浪内部的作用子浪（如平台/锯齿 C 浪，或锯齿 A 浪）：
     # 在理论层级上属于调整浪的驱动子浪（Motive Subwave），绝不能混同为大级别的单立推动浪（Impulse）
-    if parent_pattern in ("flat", "zigzag") and component == "C":
+    if parent_established and parent_pattern in ("flat", "zigzag") and component == "C":
         if pattern in ("impulse", "motive"):
             label = "C浪驱动五浪 (Motive C-wave)"
         elif pattern == "diagonal":
             label = "终结倾斜三角形 (Ending Diagonal C-wave)"
         else:
             label = "C浪驱动模式 (Motive C-wave，细型未定)"
-    elif parent_pattern == "zigzag" and component == "A":
+    elif parent_established and parent_pattern == "zigzag" and component == "A":
         if pattern in ("impulse", "motive"):
             label = "A浪驱动五浪 (Motive A-wave)"
         elif pattern == "diagonal":
             label = "引导倾斜三角形 (Leading Diagonal A-wave)"
         else:
             label = "A浪驱动模式 (Motive A-wave，细型未定)"
-    elif parent_pattern == "flat" and component == "A":
+    elif parent_established and parent_pattern == "flat" and component == "A":
         label = labels.get(pattern, "A浪调整 (Corrective A-wave)")
-    elif component == "B":
+    elif parent_established and component == "B":
         label = labels.get(pattern, "B浪调整 (Corrective B-wave)")
     else:
         label = labels.get(pattern)
         if label is None:
-            if parent_pattern == "impulse":
+            if parent_established and parent_pattern == "impulse":
                 label = "驱动模式 (Motive Mode)" if component in ("1", "3", "5") else "调整模式 (Corrective Mode)"
-            elif parent_pattern in ("zigzag", "flat"):
+            elif parent_established and parent_pattern in ("zigzag", "flat"):
                 label = "驱动模式 (Motive Mode)" if component in ("A", "C") else "调整模式 (Corrective Mode)"
-            elif parent_pattern in ("triangle", "double_combination", "triple_combination"):
+            elif parent_established and parent_pattern in ("triangle", "double_combination", "triple_combination"):
                 label = "调整模式 (Corrective Mode)"
             else:
-                return "未定"
+                return _mark_candidate("未定（内部未证）", wave)
             label += "，细型未定"
 
-    if wave.get("completion_status") != "confirmed_complete":
+    return _mark_candidate(label, wave)
+
+
+def _mark_candidate(label, wave):
+    """形态未成立或完成性未确认时，标签必须带“候选”，防止把候选写成结论。"""
+    if wave.get("pattern_status") in ("candidate", "unverified") and "（候选）" not in label:
+        label += "（候选）"
+    if wave.get("completion_status") != "confirmed_complete" and "（候选）" not in label:
         label += "（候选）"
     return label
 

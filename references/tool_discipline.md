@@ -132,12 +132,15 @@ python scripts/rule_check.py --wave "[1]:2635.09:3174.27" --wave "[2]:3174.27:26
 | `path` | string | 根组为 `""`，子组为父浪路径如 `1`、`1-3`；不得重复，必须包含根组；组路径最多三层，端点可到第四层 |
 | `pattern` | string | `impulse`／`diagonal`／`motive` → 1–5；`zigzag`／`flat` → A/B/C；`triangle` → A–E；`double_combination` → W/X/Y；`triple_combination` → W/X/Y/X2/Z；`unknown` 仅保留事实与缺证 |
 | `completed` | bool | 必填；组完成声明是输入前提，不替代内部结构核验 |
+| `pattern_status` | string | 可选，`confirmed`／`candidate`／`unverified`；D67 形态成立性。省略时由 `scripts/wave_facts.py` 按已登记子组自动推导；声明 `confirmed` 但子段证据不足判违反（退出码 1） |
 | `k` | int | 正整数，省略按 `3`；各层可不同，但须与实际摆动事实一致 |
 | `points` | array | 至少起点与一个终点，按时间顺序 |
 
 每个端点 `points[]`：`label`（字符串；起点固定 `"0"`，其后按形态标签递增）、`index`（整数，`0` 起，指向原始 CSV 数据行）、`kind`（`H`／`L`）。**禁止填 `price`**，价格一律由 CSV 的 high/low 提取。第 2 个点起必须显式声明 `completed` 布尔值。三重联合的第二个 X 用 `X2` 作内部唯一标识，绘图显示仍为 `X`。
 
 端点契约：索引递增、H/L 交替、浪长非零；子组起点须等于父浪起点，已完成子组终点须与父浪终点闭合。进行中组允许正确组成前缀，不能跳段或虚填尚未形成的末段。
+
+形态成立性契约（D67/EG-08）：声明 `zigzag`／`flat`／`triangle`／`double_combination`／`triple_combination` 时，须以子组登记其下一层构成（锯齿 A/C 驱动、平台 C 驱动、三角形 A–E 全调整、联合形 W/X/Y 全调整）；未登记子组或子段未完成时，该形态自动判为 `candidate`／`unverified`，报告中只能写「A-B-C（细型待定）／候选」，不得写成结论。
 
 ```json
 {

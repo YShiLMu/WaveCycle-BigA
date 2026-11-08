@@ -34,6 +34,63 @@ LABELS = {
     "triple_combination": ["W", "X", "Y", "X2", "Z"],
 }
 
+# D67/EG-08 形态成立性：声明某调整形态前，下一层必须已登记且已完成的分段及其允许形态。
+# 锯齿 5-3-5、平台 3-3-5、三角形 3-3-3-3-3、联合形 3-3-3；推动浪由 R-IMP 数值规则核验，不在此列。
+DRIVE_PATTERNS = ("impulse", "diagonal", "motive")
+CORRECTIVE_PATTERNS = ("zigzag", "flat", "triangle", "double_combination", "triple_combination")
+PATTERN_REQUIREMENTS = {
+    "zigzag": {"A": DRIVE_PATTERNS, "B": CORRECTIVE_PATTERNS, "C": DRIVE_PATTERNS},
+    "flat": {"A": CORRECTIVE_PATTERNS, "B": CORRECTIVE_PATTERNS, "C": DRIVE_PATTERNS},
+    "triangle": {"A": CORRECTIVE_PATTERNS, "B": CORRECTIVE_PATTERNS, "C": CORRECTIVE_PATTERNS,
+                 "D": CORRECTIVE_PATTERNS, "E": CORRECTIVE_PATTERNS},
+    "double_combination": {"W": CORRECTIVE_PATTERNS, "X": CORRECTIVE_PATTERNS,
+                            "Y": CORRECTIVE_PATTERNS},
+    "triple_combination": {"W": CORRECTIVE_PATTERNS, "X": CORRECTIVE_PATTERNS,
+                            "Y": CORRECTIVE_PATTERNS, "X2": CORRECTIVE_PATTERNS,
+                            "Z": CORRECTIVE_PATTERNS},
+}
+PATTERN_STATUSES = ("confirmed", "candidate", "unverified")
+
+
+def child_groups(path, groups_by_path):
+    """返回某个父组的直接子组（按段标签索引），不跨层。"""
+    prefix = path + "-" if path else ""
+    return {p[len(prefix):]: g for p, g in groups_by_path.items()
+            if p != path and p.startswith(prefix) and "-" not in p[len(prefix):]}
+
+
+def evaluate_pattern_establishment(path, group, groups_by_path):
+    """D67：按下一层子组登记情况判定形态成立性，返回 (status, missing, evidence)。
+
+    只审查有成立要件约束的调整形态；推动浪/斜纹浪/未定形态返回 not_required。
+    结论不信任候选 JSON 的自述，一律由已登记子组推导。
+    """
+    pattern = group.get("pattern")
+    requirements = PATTERN_REQUIREMENTS.get(pattern)
+    if requirements is None:
+        return ("not_required", [], "该形态不要求下一层成立性核验")
+    children = child_groups(path, groups_by_path)
+    missing, evidence = [], []
+    for label, allowed in requirements.items():
+        child = children.get(label)
+        if child is None:
+            missing.append("%s 段未登记内部结构" % label)
+            continue
+        child_pattern = child.get("pattern")
+        if child_pattern not in allowed:
+            missing.append("%s 段形态为 %s，不符合 %s 的成立要求（应为 %s）"
+                           % (label, child_pattern, pattern, "/".join(allowed)))
+            continue
+        if not child.get("completed"):
+            missing.append("%s 段尚未完成" % label)
+            continue
+        evidence.append("%s=%s（已完成）" % (label, child_pattern))
+    if not missing:
+        return ("confirmed", [], "；".join(evidence))
+    if evidence:
+        return ("candidate", missing, "；".join(evidence))
+    return ("unverified", missing, "无下一层成立证据")
+
 
 def load_json(path):
     return json.loads(Path(path).read_text(encoding="utf-8-sig"))
@@ -138,6 +195,7 @@ def analyze_scheme(df, scheme, depth):
         raise ValueError("group.path须为根路径空串或如1、1-1的父浪路径")
     if len(set(paths)) != len(paths) or "" not in paths:
         raise ValueError("组路径不得重复且须包含根组path='' ")
+    groups_by_path = {g["path"]: g for g in groups}
 
     def record(path, rule, status, basis):
         checks.append({"path": path, "rule": rule, "status": status, "basis": basis})
@@ -356,6 +414,26 @@ def analyze_scheme(df, scheme, depth):
             if run and (not solid or i == len(resolved) - 1):
                 chart_paths.append({"parent": path, "path": ",".join(run), "start": run_start})
                 run = []
+    # D67/EG-08：形态成立性由已登记子组推导；自述 confirmed 但证据不足判违反。
+    root_establishment = None
+    for path, group in groups_by_path.items():
+        status, missing, evidence = evaluate_pattern_establishment(path, group, groups_by_path)
+        declared = group.get("pattern_status")
+        if declared not in (None,) + PATTERN_STATUSES:
+            raise ValueError("pattern_status须为 confirmed/candidate/unverified")
+        if declared == "confirmed" and status != "confirmed":
+            record(path, "形态成立性(D67)", "违反",
+                   "声明 %s 形态已成立，但%s；先把缺证段展开或改标候选"
+                   % (group.get("pattern"), "；".join(missing)))
+        elif status in ("candidate", "unverified"):
+            record(path, "形态成立性(D67)", "待核对",
+                   "%s 形态尚未成立（%s）；报告只能按候选标注，不得作为结论或失效价位依据"
+                   % (group.get("pattern"), "；".join(missing)))
+        establishment = {"status": status, "missing": missing, "evidence": evidence}
+        if path == "":
+            root_establishment = establishment
+        elif path in facts:
+            facts[path]["pattern_establishment"] = establishment
     for path, fact in facts.items():
         if path.count("-") + 1 < depth and path not in paths:
             record(path, "细分覆盖", "待核对", "未登记下一层内部结构；不得据机械检查宣称完整数浪通过")
@@ -375,6 +453,7 @@ def analyze_scheme(df, scheme, depth):
         targets.append(target)
     return {"name": scheme["name"], "degree": scheme["degree"], "waves": list(facts.values()),
             "group_patterns": {g["path"]: g["pattern"] for g in groups},
+            "root_pattern_establishment": root_establishment,
             "checks": checks, "targets": targets, "chart_paths": chart_paths}
 
 
@@ -445,6 +524,8 @@ def main(argv=None):
             if out.resolve() in (Path(args.csv).resolve(), Path(args.data).resolve()):
                 raise ValueError("结果不能覆盖输入文件")
             out.write_text(json.dumps(result, ensure_ascii=False, allow_nan=False, indent=2), encoding="utf-8")
+        violations = sum(r["status"] == "违反" for s in result["schemes"] for r in s["checks"])
+        return 1 if violations else 0
     except (ValueError, OSError, KeyError, TypeError) as exc:
         parser.error(str(exc))
     return int(any(r["status"] == "违反" for s in result["schemes"] for r in s["checks"]))

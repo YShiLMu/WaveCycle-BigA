@@ -21,15 +21,15 @@
 > **硬性要求，缺一不可，装错了技能直接跑不起来。**
 >
 > 1. **必须安装 Python 3.10 或 3.11**。其他版本（3.9 及更早、3.12 及以上）未经验证，可能因第三方依赖装不上而跑不起来。
-> 2. **必须安装两个库：`pandas` 与 `matplotlib`**。技能的分析脚本（取数、锚点检测、绘图、校验）全部依赖它们，缺任何一个都会直接报错。
-> 3. **仅分析 A 股时**：还需安装 [`a-stock-data`](https://github.com/simonlin1212/a-stock-data) skill 及其依赖（`pip install mootdx requests pandas stockstats`）。**不想装也可以**——在同花顺日线页面按 **F1** 导出数据（或直接截图）交给技能即可。分析非 A 股市场（美股、港股、期货、加密货币等）不需要它，由用户直接提供数据或图表即可。
+> 2. **必须安装三个库：`pandas`、`matplotlib` 与 `requests`**。分析脚本（锚点检测、绘图、校验）依赖前两者；A 股内置取数协议（腾讯行情接口 + 新浪复权因子）依赖 requests。缺任何一个都会直接报错。
+> 3. **A 股取数已内置，无需 mootdx／通达信**（通达信第三方网关已实测作废并禁用）：日/周/月 K 线走腾讯 `fqkline`（自动前复权）+ 新浪复权因子，分钟线走腾讯 `mkline`，板块指数走同花顺 `d.10jqka`。仅在需要研报／资金面／期权／公告等**非常用端点**时才选装 [`a-stock-data`](https://github.com/simonlin1212/a-stock-data) skill。**不想联网也可以**——在同花顺日线页面按 **F1** 导出数据（或直接截图）交给技能即可。分析非 A 股市场（美股、港股、期货、加密货币等）由用户直接提供数据或图表。
 
 ### 第 1 步 · 装必装环境
 
-[![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/) [![pandas](https://img.shields.io/badge/pandas-必装-blue?style=flat-square&logo=pandas&logoColor=white)](https://pypi.org/project/pandas/) [![matplotlib](https://img.shields.io/badge/matplotlib-必装-blue?style=flat-square&logo=matplotlib&logoColor=white)](https://pypi.org/project/matplotlib/) [![Market](https://img.shields.io/badge/Market-A股-red?style=flat-square)](https://github.com/simonlin1212/a-stock-data) ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
+[![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/) [![pandas](https://img.shields.io/badge/pandas-必装-blue?style=flat-square&logo=pandas&logoColor=white)](https://pypi.org/project/pandas/) [![matplotlib](https://img.shields.io/badge/matplotlib-必装-blue?style=flat-square&logo=matplotlib&logoColor=white)](https://pypi.org/project/matplotlib/) ![Market](https://img.shields.io/badge/Market-A股-red?style=flat-square) ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 
 ```bash
-pip install pandas matplotlib
+pip install pandas matplotlib requests
 ```
 
 <details>
@@ -108,7 +108,7 @@ cp -r wavecycle ~/.agents/skills/    # 通用技能目录；ZCode 亦识别 ~/.z
 - **概率表述有边界**：只说"大概率/倾向于/通常"，禁止"必然/一定/绝对"；
 - **预期必须标注**：未发生的走势如实标为预期，禁止编造已完成的结构。
 
-底层机制：48 条硬规则 + 42 条准则双层裁决（Rule 违反即数法无效，Guideline 违反只降概率）+ EG-01~EG-07 工程门禁机审；江恩固定时间窗（30/60/90/144/180/360 天 + 周年日）预登记，禁止事后挑窗；A 股指数互证——主板配上证指数、创业板（300）配创业板指、科创板（688）配科创指数，各叠加板块指数；标准分析必给主备双方案，各自独立失效价位，仅豁免条件成立时才允许单方案并披露。
+底层机制：48 条硬规则 + 42 条准则双层裁决（Rule 违反即数法无效，Guideline 违反只降概率）+ EG-01~EG-08 工程门禁机审；江恩固定时间窗（30/60/90/144/180/360 天 + 周年日）预登记，禁止事后挑窗；A 股指数互证——主板配上证指数、创业板（300）配创业板指、科创板（688）配科创指数，各叠加板块指数；标准分析必给主备双方案，各自独立失效价位，仅豁免条件成立时才允许单方案并披露。
 
 ---
 
@@ -127,7 +127,7 @@ cp -r wavecycle ~/.agents/skills/    # 通用技能目录；ZCode 亦识别 ~/.z
 │   ├── fibonacci.md          # 斐波那契比率目标与空间共振
 │   ├── short_term_sr.md      # 短期支撑压力（N 级）
 │   ├── multiframe_resonance.md # 多周期共振（N 星）
-│   ├── checklists.md         # 校验清单与 EG-01~EG-07 双轨门禁
+│   ├── checklists.md         # 校验清单与 EG-01~EG-08 双轨门禁
 │   ├── workflow.md           # 分析工作流
 │   └── patterns.md / terminology.md / defaults.md / data.md / rule_conflicts.md / tool_discipline.md
 ├── assets/                   # 报告、网页报告、复盘、失效追踪、交易计划模板
@@ -142,7 +142,7 @@ cp -r wavecycle ~/.agents/skills/    # 通用技能目录；ZCode 亦识别 ~/.z
 
 ## 🙏 致谢
 
-[`a-stock-data`](https://github.com/simonlin1212/a-stock-data) —— 作者 Simon 林（[@linsizhen](https://x.com/linsizhen)）。A 股行情、资金面、新闻、公告等数据能力来自这个开源项目，是本技能 A 股分析的数据基石。感谢 Simon 林把 `a-stock-data` 开源出来，A 股的数据获取基本靠它，真的省了不少事。
+[`a-stock-data`](https://github.com/simonlin1212/a-stock-data) —— 作者 Simon 林（[@linsizhen](https://x.com/linsizhen)）。本技能 A 股**常规取数**已内置（腾讯行情接口 + 新浪复权因子 + 同花顺板块指数），仅研报／资金面／期权／公告等**非常用端点**会调用 a-stock-data。感谢开源。
 
 理论框架：Frost & Prechter《Elliott Wave Principle: Key to Market Behavior》（第 10 版，2005，Wiley）；道氏理论（Dow/Hamilton/Rhea 体系）；江恩理论（W.D. Gann 体系）；蜡烛图（Steve Nison《日本蜡烛图技术》）。
 
