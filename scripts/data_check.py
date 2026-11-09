@@ -68,7 +68,8 @@ def print_hints(failed_names):
 # 异常路径（validate_ohlc / check_metadata 硬拦截，不走 rows）的报错关键词 → HINTS 键映射
 EXC_HINT_KEYWORDS = (
     (("high < low", "low < 0", "超出 [low, high]", "缺失或非有限"), "OHLC 合理性"),
-    (("日期重复", "未按升序", "缺失日期"), "日期升序、无重复、可解析"),
+    (("日期重复", "未按升序", "缺失日期",
+      "doesn't match format", "time data", "unconverted data"), "日期升序、无重复、可解析"),
     (("元数据", "复权", "--fq"), "复权口径已标注且全程一致"),
 )
 
