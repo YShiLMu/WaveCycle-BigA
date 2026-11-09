@@ -22,17 +22,7 @@ from ohlc_io import load_ohlc
 from rule_check import evaluate
 from swings import fractal_pivots
 from target_calc import calculate
-from analysis_scope import from_facts, validate_completion, is_solid_segment
-
-LABELS = {
-    "impulse": ["1", "2", "3", "4", "5"],
-    "diagonal": ["1", "2", "3", "4", "5"],
-    "motive": ["1", "2", "3", "4", "5"],
-    "zigzag": ["A", "B", "C"], "flat": ["A", "B", "C"],
-    "triangle": ["A", "B", "C", "D", "E"],
-    "double_combination": ["W", "X", "Y"],
-    "triple_combination": ["W", "X", "Y", "X2", "Z"],
-}
+from analysis_scope import from_facts, validate_completion, is_solid_segment, LABELS
 
 # D67/EG-08 形态成立性：声明某调整形态前，下一层必须已登记且已完成的分段及其允许形态。
 # 锯齿 5-3-5、平台 3-3-5、三角形 3-3-3-3-3、联合形 3-3-3；推动浪由 R-IMP 数值规则核验，不在此列。

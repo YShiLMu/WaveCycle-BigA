@@ -19,6 +19,27 @@ COMPLETION_LABELS = {"completion_candidate": "完成候选", "confirmed_complete
 REVIEW_REASONS = {"ambiguity", "resolution", "structure_conflict", "ongoing"}
 NEXT_ACTIONS = {"recount", "finer_data", "wait"}
 
+# 波浪标签的唯一真源：形态 → 该形态允许的子浪/分段标签（按时间顺序）。
+# R-IMP-01 规定推动浪严格五浪，故 1–5 之外不存在第 6 段；EG-02 规定驱动与调整符号严禁混用。
+LABELS = {
+    "impulse": ["1", "2", "3", "4", "5"],
+    "diagonal": ["1", "2", "3", "4", "5"],
+    "motive": ["1", "2", "3", "4", "5"],
+    "zigzag": ["A", "B", "C"], "flat": ["A", "B", "C"],
+    "triangle": ["A", "B", "C", "D", "E"],
+    "double_combination": ["W", "X", "Y"],
+    "triple_combination": ["W", "X", "Y", "X2", "Z"],
+}
+# 第一层是若干同层浪的连续序列，允许的完整次序（前缀即合法未完成状态）：
+# 五浪推动后紧随其调整（八浪循环，5+3），或单独一段调整/联合形态。
+ROOT_SEQUENCES = (
+    ["1", "2", "3", "4", "5", "A", "B", "C", "D", "E"],
+    ["A", "B", "C", "D", "E"],
+    ["W", "X", "Y"],
+    ["W", "X", "Y", "X2", "Z"],
+)
+WAVE_LABELS_UNION = frozenset(label for seq in ROOT_SEQUENCES for label in seq)
+
 
 def applicable_depth(path, depth, roots=()):
     """指定四层分支以外仍检查三层；祖先承担通向分支的覆盖。未登记分支时一律停在第三层。"""
@@ -182,6 +203,61 @@ def validate_pattern_establishment(wave):
         raise ValueError("pattern_status 与 pattern_establishment.status 不一致")
 
 
+def validate_label_sequence(indexed, scheme_name=""):
+    """EG-02/R-IMP-01：浪标签须合法且按形态次序连续，禁止出现第 6 浪等伪标签。
+
+    逐层核对两件事：末段标签属于父浪形态允许的标签集（根层用合法并集），且同父兄弟
+    按时间排序后构成允许序列的前缀（父浪已声明完成时须为完整序列）。推动浪满 1–5 之后
+    只允许调整标签 A–E；任何形态下出现 6 或跳号、重号、错序都判违反。
+    """
+    children = {}
+    for path in indexed:
+        parent = path.rsplit("-", 1)[0] if "-" in path else ""
+        children.setdefault(parent, []).append(indexed[path])
+    for group in children.values():
+        group.sort(key=lambda w: w["start"])
+
+    base = "方案%s" % ("「%s」" % scheme_name if scheme_name else "")
+    for path, groups in children.items():
+        labels = [w["path"].rsplit("-", 1)[-1] for w in groups]
+        if path == "":
+            allowed_sets = [seq[:len(labels)] for seq in ROOT_SEQUENCES]
+            bad = [label for label in labels if label not in WAVE_LABELS_UNION]
+            if bad:
+                raise ValueError(
+                    "%s第一层标签 %s 非法（EG-02）：第一层只允许推动浪 1–5 与其后调整 A–C"
+                    "（R-IMP-01：推动浪严格五浪，不存在第 6 段）" % (base, "/".join(bad)))
+            if labels not in allowed_sets and len(labels) != 1:
+                raise ValueError(
+                    "%s第一层标签次序 %s 不符合任何合法序列（EG-02/R-IMP-01）："
+                    "推动浪须按 1–5 连续，其后只能接调整浪 A–C" % (base, "/".join(labels)))
+            continue
+        parent = indexed[path]
+        pattern = parent.get("pattern", "unknown")
+        canonical = LABELS.get(pattern)
+        if canonical is None:
+            # 形态未定不等于可自定义编号：仍须落在合法并集内并构成合法序列前缀。
+            if labels not in [seq[:len(labels)] for seq in ROOT_SEQUENCES]:
+                raise ValueError(
+                    "%s浪%s 形态未定（unknown），子浪标签 %s 仍须合法并连续（EG-02）；"
+                    "禁止以自定义编号挂载" % (base, path, "/".join(labels)))
+            continue
+        expected = canonical[:len(labels)]
+        if labels != expected:
+            if any(label not in canonical for label in labels):
+                raise ValueError(
+                    "%s浪%s（%s）子浪标签 %s 必须属于 %s（EG-02 驱动与调整符号严禁混用；"
+                    "R-IMP-01 推动浪严格五浪）"
+                    % (base, path, pattern, "/".join(labels), "/".join(canonical)))
+            raise ValueError(
+                "%s浪%s（%s）子浪标签次序 %s 须为 %s 的连续前缀或完整序列（R-IMP-01）"
+                % (base, path, pattern, "/".join(labels), "/".join(canonical)))
+        if parent.get("completed") and len(labels) != len(canonical):
+            raise ValueError(
+                "%s浪%s 已声明完成，但 %s 形态须登记 %d 段，实登记 %d 段（R-IMP-01）"
+                % (base, path, pattern, len(canonical), len(labels)))
+
+
 def validate_scope(scope, depth, names):
     """验证正式交付契约；返回原对象，缺证可保留但须逐浪登记。"""
     if not isinstance(scope, dict) or type(scope.get("version")) is not int or scope["version"] != SCOPE_VERSION:
@@ -258,6 +334,7 @@ def validate_scope(scope, depth, names):
                 required_text(wave, "needed")
                 validate_review(wave)
             indexed[path] = wave
+        validate_label_sequence(indexed, scheme.get("name", ""))
         if any(r not in indexed or r.count("-") >= 3 for r in roots_for_four):
             raise ValueError("四层分支须指向已登记的第一至第三层父浪")
         roots = sorted((w for p, w in indexed.items() if "-" not in p), key=lambda w: w["start"])
