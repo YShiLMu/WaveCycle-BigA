@@ -18,6 +18,15 @@ COMPLETION_LABELS = {"completion_candidate": "完成候选", "confirmed_complete
                      "in_progress": "进行中，未完成", "start_candidate": "启动候选，未完成"}
 REVIEW_REASONS = {"ambiguity", "resolution", "structure_conflict", "ongoing"}
 NEXT_ACTIONS = {"recount", "finer_data", "wait"}
+# D70/EG-09：形态遍历全集的唯一枚举源（对齐知识库 03 §7.4）
+SWEEP_PATTERNS = (
+    "impulse", "diagonal_leading", "diagonal_ending",
+    "zigzag", "double_zigzag", "triple_zigzag",
+    "flat", "triangle", "double_combination", "triple_combination",
+)
+SWEEP_RESULTS = {"rejected", "viable", "not_applicable"}
+SWEEP_TRIGGER_REASONS = {"ambiguity", "structure_conflict"}
+BLOCKED_BY_PATTERN = re.compile(r"^(?:R|G)-[A-Z]{2,4}-\d{1,2}(?:~(?:R|G)-[A-Z]{2,4}-\d{1,2})*$")
 
 # 波浪标签的唯一真源：形态 → 该形态允许的子浪/分段标签（按时间顺序）。
 # R-IMP-01 规定推动浪严格五浪，故 1–5 之外不存在第 6 段；EG-02 规定驱动与调整符号严禁混用。
@@ -186,6 +195,45 @@ def validate_review(wave):
         if (bars is not None and bars >= 15) or days >= 30:
             n_desc = f"{bars} 根K线" if bars is not None else f"{days} 天"
             raise ValueError(f"历史父浪跨度达 {n_desc}，日线分辨率充裕，必须展开第二层子浪细分，禁止以分辨率不足填报 gaps")
+    validate_pattern_sweep(review, wave)
+
+
+def validate_pattern_sweep(review, wave):
+    """D70/EG-09：多解/结构冲突的父浪须完成 10 类形态遍历。"""
+    if review.get("reason") not in SWEEP_TRIGGER_REASONS:
+        return
+    sweep = review.get("pattern_sweep")
+    if not isinstance(sweep, list) or not sweep:
+        raise ValueError("缺证父浪须登记 review.pattern_sweep（D70/EG-09）：对 10 类形态逐一给出 rejected/viable/not_applicable")
+    seen = []
+    viable = 0
+    for item in sweep:
+        if not isinstance(item, dict):
+            raise ValueError("pattern_sweep 每项须为对象")
+        pattern = item.get("pattern")
+        if pattern not in SWEEP_PATTERNS:
+            raise ValueError("pattern_sweep 含非法形态键：%r（允许：%s）"
+                             % (pattern, "/".join(SWEEP_PATTERNS)))
+        if pattern in seen:
+            raise ValueError("pattern_sweep 形态键重复：%s" % pattern)
+        seen.append(pattern)
+        result = item.get("result")
+        if result not in SWEEP_RESULTS:
+            raise ValueError("pattern_sweep[%s].result 须为 rejected/viable/not_applicable" % pattern)
+        if result == "rejected":
+            blocked = str(item.get("blocked_by") or "").strip()
+            if not BLOCKED_BY_PATTERN.fullmatch(blocked):
+                raise ValueError("pattern_sweep[%s] rejected 须填可解析的规则编号 blocked_by（如 R-IMP-09）" % pattern)
+            required_text(item, "detail")
+        elif result == "not_applicable":
+            required_text(item, "reason")
+        else:
+            viable += 1
+    missing = [pattern for pattern in SWEEP_PATTERNS if pattern not in seen]
+    if missing:
+        raise ValueError("pattern_sweep 缺类：%s（10 类须全覆盖，不适用请写 not_applicable）" % "、".join(missing))
+    if not viable:
+        raise ValueError("pattern_sweep 须至少保留一个 viable：全部 rejected 说明父浪划分有误，应回步骤 2 重数")
 
 
 def validate_pattern_establishment(wave):
@@ -587,6 +635,22 @@ def review_summary(wave):
             "k=%d：%s" % (w["k"], w["finding"]) for w in review["windows"])
         if review.get("alternatives"):
             text += "；候选：" + " / ".join(review["alternatives"])
+        sweep = review.get("pattern_sweep")
+        if isinstance(sweep, list) and sweep:
+            marks = []
+            for item in sweep:
+                if not isinstance(item, dict):
+                    continue
+                pattern = str(item.get("pattern", ""))
+                result = item.get("result")
+                if result == "rejected":
+                    marks.append("%s✗%s" % (pattern, item.get("blocked_by", "?")))
+                elif result == "viable":
+                    marks.append("%s✓" % pattern)
+                else:
+                    marks.append("%s—" % pattern)
+            if marks:
+                text += "；遍历：" + " / ".join(marks)
         text += "；下一步：" + actions[review["next_action"]]
     if wave.get("needed"):
         text += "；需：" + wave["needed"]

@@ -246,6 +246,16 @@ python scripts/rule_check.py --wave "[1]:2635.09:3174.27" --wave "[2]:3174.27:26
 
 `gaps[]` 是**候选输入专用**字段，逐项登记未展开或仅部分展开、且尚未到最深层的父浪：`path`、`state`（只允许 `in_progress`／`unresolved`）、`evidence`、`needed`、`review`。`wave_facts` 生成覆盖记录时会把它转换成 `waves` 的 `state`／`evidence`／`needed`／`review`，不会原样留在正式对象里。父浪已完整展开且子组首尾闭合时可不出现在 `gaps`；`gaps` 不得引用不存在或已到最深层的路径。
 
+**`review.pattern_sweep`（D70/EG-09，条件必填）**：当 `state ∈ {unresolved, in_progress}` 且 `review.reason ∈ {ambiguity, structure_conflict}` 时，须登记 10 类形态遍历数组，每项形如：
+
+```json
+{"pattern": "zigzag", "result": "rejected", "blocked_by": "R-IMP-09", "detail": "c 段第 3 浪 9.149 短于第 1 浪 12.187"}
+{"pattern": "triangle", "result": "not_applicable", "reason": "该父浪位于浪 3 驱动位置，三角形仅见于浪 4/B/Y/Z"}
+{"pattern": "double_zigzag", "result": "viable", "detail": "W 不完整但仍为未排除候选"}
+```
+
+`pattern` 必须恰为知识库 03 §7.4 的 10 个键之一（`impulse`／`diagonal_leading`／`diagonal_ending`／`zigzag`／`double_zigzag`／`triple_zigzag`／`flat`／`triangle`／`double_combination`／`triple_combination`），不得重复、不得缺类；`result` ∈ `rejected`／`viable`／`not_applicable`；`rejected` 必带 `blocked_by`（可解析的 R-*/G- 编号）且 `detail` 写具体数值反例；`not_applicable` 必带 `reason`；至少一项 `viable`。`ongoing`（等待后续）与 `resolution`（分辨率不足）不触发本字段。旧报告无该字段时按向后兼容跳过，更新时补登。
+
 ```json
 {
   "profile": "daily-year-month-day",

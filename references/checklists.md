@@ -61,7 +61,7 @@
 
 ---
 
-## 三、第二轨：系统工程交付合规性门禁清单（EG-01 ~ EG-08）
+## 三、第二轨：系统工程交付合规性门禁清单（EG-01 ~ EG-09）
 
 本清单承接 `references/workflow.md` 的 00 篇（系统工程规范与执行纪律），用于根除大模型在数浪交付时的偷懒、退化、符号混乱与口径失真等缺陷。
 
@@ -168,6 +168,22 @@
   - `Pass`：所有具名形态均有下一层成立证据，或未成立者已按候选标注且未进入结论；
   - `Fail`：以几何外形直接命名未证形态、组合缺分量仍标 W-X-Y、双锯齿混入平台/三角形、报告浪型列与树不一致，一票否决。
 
+### [ ] EG-09 形态遍历完整性门禁（Pattern Sweep Completeness Gate）
+- **【门禁编号】**：`EG-09`
+- **【性质】**：工程一票否决项（System Guardrail）
+- **【核心依据】**：`references/patterns.md` §7.4（形态遍历全集 10 类）；`references/workflow.md` §4.2/§4.2.2；D70。
+- **【审查规则】**：
+  - **触发条件**：`wave.state ∈ {unresolved, in_progress}` 且 `review.reason ∈ {ambiguity, structure_conflict}`；`ongoing`（等待后续）与 `resolution`（分辨率不足）不触发。
+  - **全覆盖**：`review.pattern_sweep` 必须恰好覆盖 10 类形态键（`impulse`／`diagonal_leading`／`diagonal_ending`／`zigzag`／`double_zigzag`／`triple_zigzag`／`flat`／`triangle`／`double_combination`／`triple_combination`），不得重复、不得缺类。
+  - **三态结论**：每类 `result ∈ {rejected, viable, not_applicable}`；`rejected` 必带 `blocked_by`（可解析的 R-*/G- 编号）与具体数值反例；`not_applicable` 必带位置/方向理由；禁止以「看起来不像」代替规则编号。
+  - **至少一个 viable**：10 类全部 rejected 而无 viable 时，说明父浪划分本身有误，必须回 §4.2 重数，不得直接判「待定」。
+  - **与多解呼应**：`viable` 项必须与 `review.alternatives` 语义一致，两者不得互相矛盾。
+  - **报告留痕**：遍历结论按紧凑格式（`形态✗规则编号`）进入分析前提的缺证明细，不进结论、不替代 EG-08 的三态判定。
+- **【机审落点】**：`scripts/analysis_scope.py` 的 `validate_pattern_sweep`（`validate_review` 内调用）与 `review_summary` 渲染；知识库 03 §7.4 键集为唯一枚举源。
+- **【结论判定】**：
+  - `Pass`：所有触发的父浪均登记完整 10 类遍历、rejected 均绑定规则编号、至少一个 viable 与 alternatives 呼应；
+  - `Fail`：缺字段、缺类、重复、rejected 无规则编号、无 viable、遍历与 alternatives 矛盾，一票否决。
+
 ---
 
 ## 四、机审自动化与模型审查协同路由（Execution Routing）
@@ -179,6 +195,7 @@
                   │   ├── data_check.py: 数据表头列序、缺失值与元数据哈希校验
                   │   ├── swings.py: 多尺度摆动分形点与行索引提取
                   │   ├── wave_facts.py: 逐层端点闭合、段数统计、父子浪区间包含与形态成立性（D67/EG-08）检查
+                  │   ├── analysis_scope.py: 缺证父浪的形态遍历完整性（10 类全覆盖，D70/EG-09）校验与渲染
                   │   ├── rule_check.py: 纯数值类硬规则（R-IMP-07/08/09/10，即浪2回撤、浪3突破、浪3非最短、浪4不重叠）批量校验
                   │   ├── score.py: 八因子加权总分、排名与共振标签计算
                   │   ├── report_common.validate: 询问记录（分钟分形层）/深度来源/表格与覆盖契约校验
@@ -1364,7 +1381,7 @@ $$\text{Ratio} = \frac{|\text{Current Price} - \text{Invalidation Price}|}{\text
 ### 06-1.2 打分前置检查（逐项勾选）
 
 - [ ] 候选方案已通过第一轨 48 条硬公理审查（未通过者不得进入打分，直接淘汰）
-- [ ] 候选方案已通过第二轨 EG-01 ~ EG-08 门禁
+- [ ] 候选方案已通过第二轨 EG-01 ~ EG-09 门禁
 - [ ] 每个候选中已构建 **≥1 个**独立替代方案（EG-03）；若走单方案豁免，已列明被枚举的全部备选及其被哪条硬公理证伪
 - [ ] Guideline 逐条打分表已附在报告，能追溯到具体编号（G-IMP / G-DIA / G-ZZ / G-FLAT / G-CT / G-ET / G-COMB / G-CORR）
 

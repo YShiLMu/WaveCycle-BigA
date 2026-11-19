@@ -22,7 +22,7 @@
 > - **核心使命**：确立数据处理的强类型列序铁律、CLI 工具箱防呆调用规范、分析报告三大法定交付门禁、深度分形与图表绘制契约，以及多 Agent 协同的输入输出协议。  
 > - **前置依赖**：无（本文件为工作流顶层入口）。  
 > - **下发约束**：所有执行子代理、自动化流水线脚本调用与报告生成模块必须 100% 遵从本文所列工程纪律；任何违反本文铁律的输出均判定为非法交付。
-> - **下游产物**：本文件经 「构建脚本」 产出三处内容——`references/workflow.md`（骨架视图，保留 §一/§三/§四）、`references/defaults.md`（附录 D1–D66）、`references/tool_discipline.md`（§二/§五/§六/§七）。修改本文件后必须重建并核对这三处，禁止只改其一。
+> - **下游产物**：本文件经 「构建脚本」 产出三处内容——`references/workflow.md`（骨架视图，保留 §一/§三/§四）、`references/defaults.md`（附录 D1–D70）、`references/tool_discipline.md`（§二/§五/§六/§七）。修改本文件后必须重建并核对这三处，禁止只改其一。
 
 ---
 
@@ -191,7 +191,7 @@ python scripts/data_check.py --csv "<CSV绝对路径>" --source "<数据源>" --
 
 > **本节正文已独立成文**：见 `references/tool_discipline.md`（合并视图不重复收录，避免同一正文两处维护）。
 
-## 附录：系统默认口径（D1–D69）注册与速查表
+## 附录：系统默认口径（D1–D70）注册与速查表
 
 > **本节正文已独立成文**：见 `references/defaults.md`（合并视图不重复收录，避免同一正文两处维护）。
 
@@ -588,12 +588,11 @@ python scripts/swings.py --csv "<标准化CSV绝对路径>" --k 5
 - 将历史区间划分为两大部分：**历史已完全走完的基准段**（用实线固定）与**当前正在展开的活跃震荡段**。
 
 ### 02-4.2 步骤 2：枚举所有满足 06 纯理论规则的合法组合
-- 针对当前走势的推进性质，列出所有理论可能：
-  - 可能性 A：5 浪推动推进（$1-2-3-4-5$）；
-  - 可能性 B：三浪锯齿修正反弹（$A-B-C$）；
-  - 可能性 C：平台形横盘蓄势（$A-B-C$）；
-  - 可能性 D：双重锯齿复合推进（$W-X-Y$）。
-- 运行 `scripts/rule_check.py` 对每一种可能进行二元排他性过滤，直接剔除硬性违规方案。
+- **枚举全集**：按 `references/patterns.md` §7.4 的 10 类形态**逐类过滤**，不得只挑「看起来最像」的几种：
+  - 驱动侧：`impulse` 推动浪、`diagonal_leading` 引导斜纹、`diagonal_ending` 终结斜纹；
+  - 调整侧：`zigzag` 单锯齿、`double_zigzag` 双锯齿、`triple_zigzag` 三锯齿、`flat` 平台、`triangle` 三角形、`double_combination` 双三联合、`triple_combination` 三三联合。
+- **典型示例**（仅示范，不代表全集）：5 浪推动、三浪锯齿、平台横盘、双重锯齿复合。
+- 运行 `scripts/rule_check.py` 对每一种可能进行二元排他性过滤，直接剔除硬性违规方案；每类的排除必须绑定规则编号与数值反例，逐条记入 §4.2.2 的遍历表。
 
 ### 02-4.2.1 步骤 2.1：形态成立性判定（EG-08，命名前置，强制）
 枚举出合法组合后，**先证形态、后命名**，不得凭几何外形直接写出「锯齿」「双锯齿」「平台」等形态名：
@@ -606,6 +605,32 @@ python scripts/swings.py --csv "<标准化CSV绝对路径>" --k 5
 6. **报告一致性**：Markdown 数浪表「结构」列必须与 `analysis_scope` 的形态与三态一致（D68），由报告生成器硬校验。
 
 细则见 `references/patterns.md` §7 与 `references/checklists.md` 的 EG-08。
+
+### 02-4.2.2 步骤 2.2：形态遍历表登记（EG-09/D70，强制）
+
+对每个 `state ∈ {unresolved, in_progress}` 且 `review.reason ∈ {ambiguity, structure_conflict}` 的父浪，必须在候选 JSON 的 `gaps[].review.pattern_sweep` 登记 10 类遍历结论：
+
+```json
+"pattern_sweep": [
+  {"pattern": "zigzag", "result": "rejected", "blocked_by": "R-IMP-09", "detail": "c 段第 3 浪 9.149 短于第 1 浪 12.187"},
+  {"pattern": "flat", "result": "rejected", "blocked_by": "R-FLAT-01", "detail": "A 段首段为五浪结构，非三浪"},
+  {"pattern": "triangle", "result": "rejected", "blocked_by": "R-CT-01", "detail": "主摆动仅 3 段，不足 A-E 五段"},
+  {"pattern": "impulse", "result": "not_applicable", "reason": "该父浪位于调整位置（第一层第二段）"},
+  {"pattern": "diagonal_leading", "result": "not_applicable", "reason": "引导斜纹仅见于浪 1/A 位置"},
+  {"pattern": "double_zigzag", "result": "viable", "detail": "W 不完整但仍为未排除候选"},
+  {"pattern": "double_combination", "result": "rejected", "blocked_by": "R-COMB-02", "detail": "W 非完整锯齿"}
+]
+```
+
+登记规则：
+1. **全覆盖**：10 个键（`impulse`／`diagonal_leading`／`diagonal_ending`／`zigzag`／`double_zigzag`／`triple_zigzag`／`flat`／`triangle`／`double_combination`／`triple_combination`）不得重复、不得缺类；
+2. **rejected 必绑定**：`blocked_by` 用可解析的 R-*/G- 编号（优先可推导数值边界的 R-IMP/R-DIA/R-ZZ/R-FLAT/R-CT/R-ET/R-COMB；稀缺性用 G-ZZ-05），`detail` 写具体价日与数值；
+3. **not_applicable 必带理由**：位置（浪 1/3/5/A/B/C/4/Y/Z）或方向不适用；
+4. **至少一个 viable**：全部 rejected 说明划分有误，必须回 §4.2 重数；
+5. **viable ↔ alternatives 呼应**：`alternatives` 是遍历 `viable` 项的文字化表达，两者不得矛盾；
+6. **渲染**：`analysis_scope.review_summary` 会把遍历以紧凑格式（`形态✗规则编号`）写入分析前提的缺证明细；不触发 EG-08 的三态判定、不进结论。
+
+避坑 6（§3.6）所说的「逐条排他」，其机器格式即本节；缺登记由 `analysis_scope.validate_pattern_sweep` 一票否决（D70/EG-09）。
 
 ### 02-4.3 步骤 3：构建主方案与替代方案
 - **主方案（Preferred Count）**：选取几何形态最自然、与道氏趋势最共振、符合交替原则与斐波那契回撤比例最高的方案。打分一律按 `references/workflow.md` §03-4.1（Guideline×2 + 七因子 0/1/2）由 `scripts/score.py` 计算，**不输出百分比概率**。

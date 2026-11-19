@@ -3,11 +3,11 @@
 
 # 项目默认口径（D1–D69）
 
-## 附录：系统默认口径（D1–D69）注册与速查表
+## 附录：系统默认口径（D1–D70）注册与速查表
 
 WaveCycle 体系将核心工程参数、容差阈值与判定契约集中编码为默认口径体系。
 
-- **本附录是 D1–D69 的唯一真源**；打包版 `references/defaults.md` 由 「构建脚本」 从本节转换生成，禁止直接修改产物。
+- **本附录是 D1–D70 的唯一真源**；打包版 `references/defaults.md` 由 「构建脚本」 从本节转换生成，禁止直接修改产物。
 - D60–D64 的理论真源为 `references/short_term_sr.md` 与 `references/multiframe_resonance.md`；D65 真源为 `references/workflow.md` §00-1.2 与 `references/data.md` §1.3。理论表述以对应真源文件为准，编号定义以本表为准。
 - 任何编号调整必须遵行「改本表 + 改权威定义处 + 全仓库引用一致 + 报告披露」四步。
 
@@ -82,3 +82,4 @@ WaveCycle 体系将核心工程参数、容差阈值与判定契约集中编码�
 | **D67** | 形态成立性与命名前置 | 具名调整形态（锯齿／平台／三角形／联合形／双锯齿）只有在下一层构成分段已登记、已完成且形态相符时才成立：锯齿 5-3-5（A/C 驱动）、平台 3-3-5（C 驱动）、三角形 3-3-3-3-3、联合形 3-3-3（W/X/Y 各自为调整）、双锯齿另要求 W/Y 均为锯齿（R-COMB-02）。成立性三态 `confirmed`／`candidate`／`unverified`；自述 `confirmed` 但无子段证据判违反（退出码 1）。未成立只能写「A-B-C（细型待定）」并标候选，不得作为失效价位、交易计划或概率结论的唯一依据。 | `scripts/wave_facts.py`（`evaluate_pattern_establishment`）、`scripts/analysis_scope.py`、知识库 03 §7、EG-08 |
 | **D68** | 报告浪型列一致性 | Markdown 数浪表「结构」列必须与 `analysis_scope` 的 `pattern` + `pattern_status` 一致：形态未定/未成立时不得出现锯齿、双锯齿、平台、三角形、联合形等具体形态名，须含「候选/待定/进行中」；树中形态未成立时须带「候选」；标「双锯齿」须 W、Y 两段均成立为锯齿（R-COMB-02）。网页浪型按同一三态渲染，父级组合未成立时子浪不得显示「调整模式」。 | `report_common.validate_wave_structure_table`、`scripts/gen_report_md.py`／`scripts/gen_report_web.py`、报告门禁 14 |
 | **D69** | 交付审查层量化阈值 | 校验清单内新增的工程量化口径统一注册：① 翻越刺破深度 ≤ 通道垂直高度 10% 且 1~3 根 K 线收回轨内（CK-CHN-06）；② 软失效比率预警线——浪 2 回撤 >0.786、浪 4 回撤 >0.618、平台形浪 B >1.50×（CK-INV-S02，触发后转连续 2 根收盘确认，降级"观察中"，不构成硬失效）；③ 通道拟合容差 ±0.5%（优选）/ ±1.5%（合格）（驱动浪清单 G-IMP-04 打分示例）。 | 04_校验清单_checklists/01、03、05 分册，references/checklists.md |
+| **D70** | 形态遍历完整性 | 父浪标为 `unresolved` 且 `review.reason ∈ {ambiguity, structure_conflict}` 时，必须登记 `review.pattern_sweep`：对 `references/patterns.md` §7.4 的 10 类形态（impulse／diagonal_leading／diagonal_ending／zigzag／double_zigzag／triple_zigzag／flat／triangle／double_combination／triple_combination）逐类给出 `rejected`（附 `blocked_by` 硬规则编号）／`viable`／`not_applicable`（附理由）三态之一，不得重复、不得缺类；至少保留一个 `viable` 且与 `alternatives` 呼应。`ongoing`／`resolution` 不触发。旧报告（无该字段）更新时补登。 | `scripts/analysis_scope.py`（`validate_pattern_sweep`）、知识库 03 §7.4、EG-09 |
